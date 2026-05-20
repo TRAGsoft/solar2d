@@ -1836,9 +1836,10 @@ LuaGroupObjectProxyVTable::PushMethod( lua_State *L, const GroupObject& o, const
         "setAsSizedGroupWithCurrentSize",    // 3
         "numChildren",        // 4
         "anchorChildren",    // 5
+        "isSizedGroup",        // 6
     };
     static const int numKeys = sizeof( keys ) / sizeof( const char * );
-    static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 6, 1, 1, __FILE__, __LINE__ );
+    static StringHash sHash( *LuaContext::GetAllocator( L ), keys, numKeys, 7, 3, 1, __FILE__, __LINE__ );
     StringHash *hash = &sHash;
 
     int index = hash->Lookup( key );
@@ -1878,6 +1879,12 @@ LuaGroupObjectProxyVTable::PushMethod( lua_State *L, const GroupObject& o, const
     case 5:
         {
             lua_pushboolean( L, o.IsAnchorChildren() );
+            result = 1;
+        }
+        break;
+    case 6:
+        {
+            lua_pushboolean( L, o.IsSizedGroup() );
             result = 1;
         }
         break;

@@ -56,6 +56,7 @@ class GroupObject : public DisplayObject
 		virtual bool HitTest( Real contentX, Real contentY );
 		virtual bool CanCull() const;
 		virtual bool StageBoundsDependsOnChildren() const;
+		bool IsSizedGroup() const { return fHasFixedSelfBounds; }
 
 	public:
 		virtual const LuaProxyVTable& ProxyVTable() const;

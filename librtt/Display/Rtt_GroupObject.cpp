@@ -366,32 +366,20 @@ GroupObject::SetAsSizedGroup( Real width, Real height )
 	Real newWidth = ( width > Rtt_REAL_0 ? width : Rtt_REAL_0 );
 	Real newHeight = ( height > Rtt_REAL_0 ? height : Rtt_REAL_0 );
 	Rect currentBounds;
-	bool hadFixedSelfBounds = fHasFixedSelfBounds;
-	fHasFixedSelfBounds = false;
 	GetSelfBounds( currentBounds );
-	fHasFixedSelfBounds = hadFixedSelfBounds;
 	Rect newBounds;
 
 	if ( currentBounds.NotEmpty() )
 	{
-		if ( ShouldOffsetWithAnchor() )
-		{
-			Real anchorX = GetAnchorX();
-			Real anchorY = GetAnchorY();
-			Real xAnchor = currentBounds.xMin + Rtt_RealMul( anchorX, currentBounds.Width() );
-			Real yAnchor = currentBounds.yMin + Rtt_RealMul( anchorY, currentBounds.Height() );
+		Real anchorX = GetAnchorX();
+		Real anchorY = GetAnchorY();
+		Real xAnchor = currentBounds.xMin + Rtt_RealMul( anchorX, currentBounds.Width() );
+		Real yAnchor = currentBounds.yMin + Rtt_RealMul( anchorY, currentBounds.Height() );
 
-			newBounds.xMin = xAnchor - Rtt_RealMul( anchorX, newWidth );
-			newBounds.yMin = yAnchor - Rtt_RealMul( anchorY, newHeight );
-			newBounds.xMax = newBounds.xMin + newWidth;
-			newBounds.yMax = newBounds.yMin + newHeight;
-		}
-		else
-		{
-			Vertex2 center;
-			currentBounds.GetCenter( center );
-			newBounds.Initialize( center.x, center.y, newWidth, newHeight );
-		}
+		newBounds.xMin = xAnchor - Rtt_RealMul( anchorX, newWidth );
+		newBounds.yMin = yAnchor - Rtt_RealMul( anchorY, newHeight );
+		newBounds.xMax = newBounds.xMin + newWidth;
+		newBounds.yMax = newBounds.yMin + newHeight;
 	}
 	else
 	{
@@ -405,11 +393,7 @@ void
 GroupObject::SetAsSizedGroupWithCurrentSize()
 {
 	Rect currentBounds;
-    
-	bool hadFixedSelfBounds = fHasFixedSelfBounds;
-	fHasFixedSelfBounds = false;
 	GetSelfBounds( currentBounds );
-	fHasFixedSelfBounds = hadFixedSelfBounds;
 
 	if ( currentBounds.NotEmpty() )
 	{
@@ -448,7 +432,7 @@ GroupObject::ProxyVTable() const
 bool
 GroupObject::ShouldOffsetWithAnchor() const
 {
-    return IsProperty( kIsAnchorChildren );
+    return fHasFixedSelfBounds || IsProperty( kIsAnchorChildren );
 }
 
 void
