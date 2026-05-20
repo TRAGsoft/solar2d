@@ -393,7 +393,11 @@ void
 GroupObject::SetAsSizedGroupWithCurrentSize()
 {
 	Rect currentBounds;
+    
+	bool hadFixedSelfBounds = fHasFixedSelfBounds;
+	fHasFixedSelfBounds = false;
 	GetSelfBounds( currentBounds );
+	fHasFixedSelfBounds = hadFixedSelfBounds;
 
 	if ( currentBounds.NotEmpty() )
 	{
