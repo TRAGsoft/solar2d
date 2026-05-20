@@ -366,7 +366,10 @@ GroupObject::SetAsSizedGroup( Real width, Real height )
 	Real newWidth = ( width > Rtt_REAL_0 ? width : Rtt_REAL_0 );
 	Real newHeight = ( height > Rtt_REAL_0 ? height : Rtt_REAL_0 );
 	Rect currentBounds;
+	bool hadFixedSelfBounds = fHasFixedSelfBounds;
+	fHasFixedSelfBounds = false;
 	GetSelfBounds( currentBounds );
+	fHasFixedSelfBounds = hadFixedSelfBounds;
 	Rect newBounds;
 
 	if ( currentBounds.NotEmpty() )
