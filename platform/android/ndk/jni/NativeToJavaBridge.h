@@ -127,6 +127,7 @@ class NativeToJavaBridge
 		void GetPlatformVersion( Rtt::String *outValue );
 		void GetProductName( Rtt::String *outValue );
 		int GetApproximateScreenDpi();
+		bool IsPhone();
 		int PushSystemInfoToLua( lua_State *L, const char *key );
 		void GetPreference( int category, Rtt::String *outValue );
 		Rtt::Preference::ReadValueResult GetPreference( const char* keyName );

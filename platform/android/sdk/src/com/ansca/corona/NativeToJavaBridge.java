@@ -1147,6 +1147,38 @@ public class NativeToJavaBridge {
 		return result;
 	}
 
+	protected static boolean callIsPhone()
+	{
+		boolean isPhoneSizedScreen = false;
+		boolean hasUsablePhysicalDisplayMetrics = false;
+		android.util.DisplayMetrics displayMetricsForPhoneSizeCheck = getDisplayMetrics();
+		if (displayMetricsForPhoneSizeCheck != null) {
+			double horizontalPixelsPerInch = displayMetricsForPhoneSizeCheck.xdpi;
+			double verticalPixelsPerInch = displayMetricsForPhoneSizeCheck.ydpi;
+			if ((horizontalPixelsPerInch > 0.0) && (verticalPixelsPerInch > 0.0)) {
+				double physicalDisplayWidthInInches =
+						(double)displayMetricsForPhoneSizeCheck.widthPixels / horizontalPixelsPerInch;
+				double physicalDisplayHeightInInches =
+						(double)displayMetricsForPhoneSizeCheck.heightPixels / verticalPixelsPerInch;
+				double physicalDisplayDiagonalInInches = Math.sqrt(
+						(physicalDisplayWidthInInches * physicalDisplayWidthInInches) +
+						(physicalDisplayHeightInInches * physicalDisplayHeightInInches));
+				isPhoneSizedScreen = physicalDisplayDiagonalInInches < 7.0;
+				hasUsablePhysicalDisplayMetrics = true;
+			}
+		}
+		if (!hasUsablePhysicalDisplayMetrics) {
+			android.content.Context context = CoronaEnvironment.getApplicationContext();
+			if (context != null) {
+				int smallestScreenWidthInDensityIndependentPixels =
+						context.getResources().getConfiguration().smallestScreenWidthDp;
+				isPhoneSizedScreen = (smallestScreenWidthInDensityIndependentPixels > 0) &&
+						(smallestScreenWidthInDensityIndependentPixels < 600);
+			}
+		}
+		return isPhoneSizedScreen;
+	}
+
 	protected static int callPushSystemInfoToLua(CoronaRuntime runtime, long luaStateMemoryAddress, String key)
 	{
 		// Validate.

@@ -69,6 +69,7 @@ class Display
 
     protected:
         void ReadRenderingConfig( lua_State *L, int index, ProgramHeader& programHeader );
+        bool IsPhone() const;
 
 	public:
 		virtual void Start();

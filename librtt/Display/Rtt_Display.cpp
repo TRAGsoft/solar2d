@@ -25,6 +25,7 @@
 #include "Rtt_BufferBitmap.h"
 #include "Rtt_Lua.h"
 #include "Rtt_LuaContext.h"
+#include "Rtt_MPlatformDevice.h"
 #include "Rtt_PlatformSurface.h"
 #include "Rtt_Profiling.h"
 #include "CoronaLua.h"
@@ -140,7 +141,7 @@ Display::Initialize( lua_State *L, int configIndex, const char * backend, void *
 		{
 			ReadRenderingConfig( L, configIndex, programHeader );
 		}
-		fStream->SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height() );
+		fStream->SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height(), IsPhone() );
 
 		result = true;
 
@@ -211,6 +212,12 @@ Display::ReadRenderingConfig( lua_State *L, int index, ProgramHeader& programHea
 	Rtt_ASSERT( 1 == lua_gettop( L ) );	
 }
 
+bool
+Display::IsPhone() const
+{
+	return GetRuntime().Platform().GetDevice().IsPhone();
+}
+
 lua_State *
 Display::GetL() const
 {
@@ -231,13 +238,13 @@ Display::Start()
 	RuntimeGuard guard( GetRuntime() );
 
 	RenderingStream& stream = * fStream;
-	stream.SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height() );
+	stream.SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height(), IsPhone() );
 }
 void
 Display::Restart()
 {
 	RenderingStream& stream = * fStream;
-	stream.SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height() );
+	stream.SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height(), IsPhone() );
 }
 	
 void
@@ -938,7 +945,7 @@ Display::WindowSizeChanged()
 		RenderingStream *stream = fStream;
 		if ( stream ) // Is this check neccesary?
 		{
-			stream->SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height() );
+			stream->SetOptimalContentSize( fScreenSurface->Width(), fScreenSurface->Height(), IsPhone() );
 		}
 	}
 	runtime.End();

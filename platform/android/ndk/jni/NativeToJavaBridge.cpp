@@ -1289,6 +1289,26 @@ NativeToJavaBridge::GetApproximateScreenDpi()
 
 }
 
+bool
+NativeToJavaBridge::IsPhone()
+{
+	NativeTrace trace( "NativeToJavaBridge::IsPhone" );
+
+	jclassInstance bridge( GetJNIEnv(), kNativeToJavaBridge );
+	bool result = false;
+	if (bridge.isValid())
+	{
+		jmethodID mid = bridge.getEnv()->GetStaticMethodID(bridge.getClass(),
+				"callIsPhone", "()Z" );
+		if (mid != NULL)
+		{
+			result = bridge.getEnv()->CallStaticBooleanMethod(bridge.getClass(), mid) ? true : false;
+			HandleJavaException();
+		}
+	}
+	return result;
+}
+
 int
 NativeToJavaBridge::PushSystemInfoToLua( lua_State *L, const char *key )
 {

@@ -46,6 +46,7 @@ class AndroidDevice : public MPlatformDevice
 		virtual const char* GetPlatformVersion() const;
 		virtual const char* GetProductName() const;
 		virtual const char* GetArchitectureInfo() const;
+		virtual bool IsPhone() const;
 		virtual PlatformInputDeviceManager& GetInputDeviceManager();
 
 	public:

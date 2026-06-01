@@ -49,6 +49,7 @@ class IPhoneDevice : public MPlatformDevice
 		virtual const char* GetPlatform() const;
 		virtual const char* GetPlatformVersion() const;
 		virtual const char* GetArchitectureInfo() const;
+		virtual bool IsPhone() const;
 		virtual PlatformInputDeviceManager& GetInputDeviceManager();
 	
 	public:

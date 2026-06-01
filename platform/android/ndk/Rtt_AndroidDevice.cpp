@@ -180,6 +180,12 @@ AndroidDevice::GetModel() const
 	return fModel->GetString();
 }
 
+bool
+AndroidDevice::IsPhone() const
+{
+	return fNativeToJavaBridge->IsPhone();
+}
+
 const char*
 AndroidDevice::GetUniqueIdentifier( IdentifierType t ) const
 {

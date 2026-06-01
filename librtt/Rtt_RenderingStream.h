@@ -105,7 +105,7 @@ class RenderingStream
 		void ContentToPixels( S32& x, S32& y, S32& w, S32& h ) const;
 
 		// Call this method when the window size changes
-		void SetOptimalContentSize( S32 deviceWidth, S32 deviceHeight );
+		void SetOptimalContentSize( S32 deviceWidth, S32 deviceHeight, bool isPhone );
 
 	public:
 		Rtt_FORCE_INLINE bool IsProperty( U32 mask ) const { return (fProperties & mask) != 0; }

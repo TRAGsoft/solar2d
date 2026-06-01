@@ -113,32 +113,82 @@ RenderingStream::SetContentSizeRestrictions( S32 minContentWidth, S32 maxContent
 }
 
 void
-RenderingStream::SetOptimalContentSize( S32 deviceWidth, S32 deviceHeight )
+RenderingStream::SetOptimalContentSize( S32 deviceWidth, S32 deviceHeight, bool isPhone )
 {
 	fDeviceWidth = deviceWidth;
 	fDeviceHeight = deviceHeight;
 
-	S32 maxContentToScreenScaleForWidth = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceWidth), Rtt_IntToReal(fMinContentWidth)));
-	S32 maxContentToScreenScaleForHeight = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceHeight), Rtt_IntToReal(fMinContentHeight)));
-	S32 maxContentToScreenScale = Min(maxContentToScreenScaleForWidth, maxContentToScreenScaleForHeight);
-	for(S32 contentToScreenScale=1; contentToScreenScale <= maxContentToScreenScale; contentToScreenScale++) {
-		S32 contentWidth = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceWidth), Rtt_IntToReal(contentToScreenScale)));
-		S32 contentHeight = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceHeight), Rtt_IntToReal(contentToScreenScale)));
-		S32 clampedContentWidth = Min(Max(contentWidth, fMinContentWidth), fMaxContentWidth);
-		S32 clampedContentHeight = Min(Max(contentHeight, fMinContentHeight), fMaxContentHeight);
+	S32 maximumContentToScreenScaleForWidth = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceWidth), Rtt_IntToReal(fMinContentWidth)));
+	S32 maximumContentToScreenScaleForHeight = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceHeight), Rtt_IntToReal(fMinContentHeight)));
+	S32 maximumContentToScreenScale = Min(maximumContentToScreenScaleForWidth, maximumContentToScreenScaleForHeight);
+	// The offset is per side; a budget of 5 caps visible black borders at 10 pixels on a single axis.
+	S32 maximumPreferredTotalScreenOffset = 5;
 
-		S32 xOffset = ceil(Rtt_RealDiv2(Rtt_IntToReal(fDeviceWidth - (clampedContentWidth * contentToScreenScale))));
-		S32 yOffset = ceil(Rtt_RealDiv2(Rtt_IntToReal(fDeviceHeight - (clampedContentHeight * contentToScreenScale))));
+	S32 selectedContentToScreenScale = 1;
+	S32 selectedContentWidth = fMinContentWidth;
+	S32 selectedContentHeight = fMinContentHeight;
+	S32 selectedHorizontalScreenOffset = 0;
+	S32 selectedVerticalScreenOffset = 0;
+	S32 selectedTotalScreenOffset = 0;
+	bool selectedHasPreferredScreenOffset = false;
+	bool hasSelectedContentScale = false;
 
-		// We allow offset of 4 pixels as that allows much more devices to be more zoomed out
-		if (contentToScreenScale == 1 || ((fXScreenOffset + fYScreenOffset) > 4 && (xOffset + yOffset) < (fXScreenOffset + fYScreenOffset))) {
-			fXScreenOffset = xOffset;
-			fYScreenOffset = yOffset;
-			fContentWidth = clampedContentWidth;
-			fContentHeight = clampedContentHeight;
-			fContentToScreenScale = contentToScreenScale;
+	for(S32 candidateContentToScreenScale=1; candidateContentToScreenScale <= maximumContentToScreenScale; candidateContentToScreenScale++) {
+		S32 candidateContentWidth = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceWidth), Rtt_IntToReal(candidateContentToScreenScale)));
+		S32 candidateContentHeight = floor(Rtt_RealDiv(Rtt_IntToReal(fDeviceHeight), Rtt_IntToReal(candidateContentToScreenScale)));
+		S32 candidateClampedContentWidth = Min(Max(candidateContentWidth, fMinContentWidth), fMaxContentWidth);
+		S32 candidateClampedContentHeight = Min(Max(candidateContentHeight, fMinContentHeight), fMaxContentHeight);
+
+		S32 candidateHorizontalScreenOffset = ceil(Rtt_RealDiv2(Rtt_IntToReal(fDeviceWidth - (candidateClampedContentWidth * candidateContentToScreenScale))));
+		S32 candidateVerticalScreenOffset = ceil(Rtt_RealDiv2(Rtt_IntToReal(fDeviceHeight - (candidateClampedContentHeight * candidateContentToScreenScale))));
+		S32 candidateTotalScreenOffset = candidateHorizontalScreenOffset + candidateVerticalScreenOffset;
+
+		bool shouldSelectCandidate = false;
+		bool candidateFitsWithinDeviceScreen = candidateHorizontalScreenOffset >= 0 && candidateVerticalScreenOffset >= 0;
+		bool candidateHasPreferredScreenOffset = candidateTotalScreenOffset <= maximumPreferredTotalScreenOffset;
+		if (candidateFitsWithinDeviceScreen)
+		{
+			if (!hasSelectedContentScale)
+			{
+				shouldSelectCandidate = true;
+			}
+			else if (candidateHasPreferredScreenOffset && !selectedHasPreferredScreenOffset)
+			{
+				shouldSelectCandidate = true;
+			}
+			else if (candidateHasPreferredScreenOffset == selectedHasPreferredScreenOffset)
+			{
+				if (candidateHasPreferredScreenOffset)
+				{
+					shouldSelectCandidate = isPhone
+						? candidateContentToScreenScale > selectedContentToScreenScale
+						: candidateContentToScreenScale < selectedContentToScreenScale;
+				}
+				else
+				{
+					shouldSelectCandidate = candidateTotalScreenOffset < selectedTotalScreenOffset;
+				}
+			}
+		}
+
+		if (shouldSelectCandidate)
+		{
+			hasSelectedContentScale = true;
+			selectedHasPreferredScreenOffset = candidateHasPreferredScreenOffset;
+			selectedContentToScreenScale = candidateContentToScreenScale;
+			selectedContentWidth = candidateClampedContentWidth;
+			selectedContentHeight = candidateClampedContentHeight;
+			selectedHorizontalScreenOffset = candidateHorizontalScreenOffset;
+			selectedVerticalScreenOffset = candidateVerticalScreenOffset;
+			selectedTotalScreenOffset = candidateTotalScreenOffset;
 		}
 	}
+
+	fXScreenOffset = selectedHorizontalScreenOffset;
+	fYScreenOffset = selectedVerticalScreenOffset;
+	fContentWidth = selectedContentWidth;
+	fContentHeight = selectedContentHeight;
+	fContentToScreenScale = selectedContentToScreenScale;
 
 	fScreenToContentScale = Rtt_RealDiv( Rtt_REAL_1, Rtt_IntToReal(fContentToScreenScale) );
 	fScaledContentWidth = fContentWidth * fContentToScreenScale;

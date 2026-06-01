@@ -90,6 +90,12 @@ IPhoneDevice::GetModel() const
 	return [[[UIDevice currentDevice] model] UTF8String];
 }
 
+bool
+IPhoneDevice::IsPhone() const
+{
+	return [UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPhone;
+}
+
 MPlatformDevice::EnvironmentType
 IPhoneDevice::GetEnvironment() const
 {

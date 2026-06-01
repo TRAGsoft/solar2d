@@ -384,6 +384,10 @@ LuaLibSystem::getInfo( lua_State *L )
 	{
 		lua_pushstring( L, device.GetArchitectureInfo() );
 	}
+	else if ( Rtt_StringCompare( key, "isPhone" ) == 0 )
+	{
+		lua_pushboolean( L, device.IsPhone() );
+	}
 	else if ( Rtt_StringCompare( key, "textureMemoryUsed" ) == 0 )
 	{
 		TextureFactory& factory = LuaContext::GetRuntime( L )->GetDisplay().GetTextureFactory();

@@ -85,6 +85,7 @@ class MPlatformDevice
 		virtual const char* GetPlatform() const = 0;
 		virtual const char* GetPlatformVersion() const = 0;
 		virtual const char* GetArchitectureInfo() const = 0;
+		virtual bool IsPhone() const { return false; }
 		virtual PlatformInputDeviceManager& GetInputDeviceManager() = 0;
 
 	public:
