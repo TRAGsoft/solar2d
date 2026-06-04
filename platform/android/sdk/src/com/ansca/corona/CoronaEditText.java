@@ -380,7 +380,21 @@ public class CoronaEditText extends EditText {
 		if ((myMaxLength > 0) && (text.length() > myMaxLength)) {
 			text = text.substring(0, myMaxLength);
 		}
+
+		// Remember the current cursor/selection so it can be restored after the update.
+		// Otherwise setText() moves the cursor to position 0, which makes typing and
+		// deleting behave erratically whenever the app assigns the ".text" property while
+		// the field is being edited (e.g. input filtering/formatting in a userInput listener).
+		int selectionStartIndex = getSelectionStart();
+		int selectionEndIndex = getSelectionEnd();
+
 		setText(text, TextView.BufferType.EDITABLE);
+
+		// Restore the cursor/selection, clamped to the new text length.
+		int textLength = getText().length();
+		selectionStartIndex = Math.max(0, Math.min(selectionStartIndex, textLength));
+		selectionEndIndex = Math.max(0, Math.min(selectionEndIndex, textLength));
+		setSelection(selectionStartIndex, selectionEndIndex);
 	}
 
 	public String getTextViewText()
