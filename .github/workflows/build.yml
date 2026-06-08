@@ -17,7 +17,7 @@ env:
 jobs:
   source-code:
     name: Check out and process source code
-    if: "!contains(github.ref, 'refs/tags/') || github.repository == 'pouwelsjochem/solar2d'"
+    if: "!contains(github.ref, 'refs/tags/') || github.repository == 'TRAGsoft/solar2d'"
     runs-on: macos-26
     steps:
       - run: CDR="$(basename "$(pwd)")" ; cd .. ; rm -rf "$CDR" ; mkdir -p "$CDR" ; cd "$CDR"

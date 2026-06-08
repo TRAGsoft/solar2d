@@ -16,15 +16,15 @@
 	branch = master
 [submodule "plugins/build"]
 	path = plugins/build
-	url = https://github.com/pouwelsjochem/submodule-plugins-build.git
+	url = https://github.com/TRAGsoft/submodule-plugins-build.git
 	branch = master
 [submodule "plugins/build-core"]
 	path = plugins/build-core
-	url = https://github.com/pouwelsjochem/submodule-plugins-build-core.git
+	url = https://github.com/TRAGsoft/submodule-plugins-build-core.git
 	branch = master
 [submodule "plugins/network"]
 	path = plugins/network
-	url = https://github.com/pouwelsjochem/submodule-plugins-network
+	url = https://github.com/TRAGsoft/submodule-plugins-network
     branch = master
 [submodule "subrepos/easing"]
 	path = subrepos/easing
