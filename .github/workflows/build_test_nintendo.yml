@@ -46,7 +46,7 @@ jobs:
       - name: Build Native
         run: JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME_17_arm64}" ./tools/GHAction/build_native.sh
         env:
-          CERT_PASSWORD: ${{ secrets.CertPassword }}
+          CERTIFICATES_P12_PASSWORD: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
       - name: Upload Corona Native
         uses: actions/upload-artifact@v4
         with:

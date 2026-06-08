@@ -50,7 +50,7 @@ jobs:
       - name: Build Native
         run: JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME_17_arm64}" ./tools/GHAction/build_native.sh
         env:
-          CERT_PASSWORD: ${{ secrets.CertPassword }}
+          CERTIFICATES_P12_PASSWORD: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
       - name: Upload Corona Native
         uses: actions/upload-artifact@v4
         with:
@@ -93,7 +93,7 @@ jobs:
         working-directory: ./platform/${{ matrix.platform }}
         run: ./gh_build_templates.sh
         env:
-          CERT_PASSWORD: ${{ secrets.CertPassword }}
+          CERTIFICATES_P12_PASSWORD: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
       - name: Build templates JSON spec
         run: ./tools/GHAction/generate_xcode_jsons.py
       - name: Upload templates
@@ -174,7 +174,7 @@ jobs:
       - name: Build DMG
         run: ./tools/GHAction/build_dmg.sh
         env:
-          CERT_PASSWORD: ${{ secrets.CertPassword }}
+          CERTIFICATES_P12_PASSWORD: ${{ secrets.CERTIFICATES_P12_PASSWORD }}
       - name: Notarize
         id: notarize
         run: |
@@ -244,19 +244,6 @@ jobs:
           7z x -snld SourceCode/corona.tgz
           7z x -snld corona.tar
           ver > nul     
-      # - name: Checkout Switch specific source code (under NDA)
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: pouwelsjochem/solar2d-platform-switch
-      #     token: ${{ secrets.PLATFORM_SWITCH_REPO_PAT }}
-      #     path: platform\switch
-      # - name: Checkout Switch CI (under NDA)
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: pouwelsjochem/nintendo-setup-ci
-      #     ref: "2.5.5"
-      #     token: ${{ secrets.NINTENDO_SETUP_CI_REPO_PAT }}
-      #     path: platform\switch\ci
       - run: ./tools/GHAction/daily_env.sh
         shell: bash
       - run: mkdir -f docs

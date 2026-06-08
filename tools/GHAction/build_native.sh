@@ -4,12 +4,12 @@ set -ex
 WORKSPACE=$(cd "$(dirname "$0")/../.." && pwd)
 export WORKSPACE
 
-if [ -n "$CERT_PASSWORD" ]
+if [ -n "$CERTIFICATES_P12_PASSWORD" ]
 then
     security delete-keychain build.keychain || true
     security create-keychain -p 'Password123' build.keychain
     security default-keychain -s build.keychain
-    security import "$WORKSPACE/tools/GHAction/Certificates.p12" -A -P "$CERT_PASSWORD"
+    security import "$WORKSPACE/tools/GHAction/Certificates.p12" -A -P "$CERTIFICATES_P12_PASSWORD"
     security unlock-keychain -p 'Password123' build.keychain
     security set-keychain-settings build.keychain
     security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k 'Password123' build.keychain > /dev/null
@@ -31,7 +31,7 @@ then
     echo "BUILD FAILED"
 fi
 
-if [ -n "$CERT_PASSWORD" ]
+if [ -n "$CERTIFICATES_P12_PASSWORD" ]
 then
     security default-keychain -s login.keychain
     security delete-keychain build.keychain &> /dev/null || true
