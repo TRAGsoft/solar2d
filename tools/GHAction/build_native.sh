@@ -19,6 +19,44 @@ then
     do
         cp "$WORKSPACE/platform/$PLATFORM_DIR"/*.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/"
     done
+else
+    # No signing certificate available (e.g. Switch-only test workflow).
+    # subrepos/enterprise/build.sh invokes xcodebuild without any overrides,
+    # and the .xcodeproj files hardcode 'Developer ID Application: Corona Labs Inc'.
+    # Inject command-line build settings via a PATH shim so all downstream
+    # xcodebuild calls become signing-free.
+    XCB_WRAP_DIR="$(mktemp -d -t xcb-wrap)"
+    cat > "$XCB_WRAP_DIR/xcodebuild" <<'EOF'
+#!/usr/bin/env bash
+# Inject signing-disabled build settings as command-line args (highest precedence
+# in xcodebuild's setting evaluation) for normal build invocations. Covers base
+# + SDK-conditional identities and the automatic-signing inputs
+# (DEVELOPMENT_TEAM / provisioning profile), which is what triggers
+# GatherProvisioningInputs to look up a cert.
+#
+# Skip injection for xcodebuild "verbs" that don't accept build settings as
+# command-line args (e.g. -create-xcframework, -version, -showsdks, -list,
+# -exportArchive, -importArchive). Without this guard the shim breaks them
+# with `error: invalid argument 'CODE_SIGN_IDENTITY='.`.
+for arg in "$@"; do
+    case "$arg" in
+        -create-xcframework|-version|-showsdks|-showBuildSettings|-list|-exportArchive|-importArchive|-resolvePackageDependencies|-showBuildTimingSummary)
+            exec /usr/bin/xcodebuild "$@"
+            ;;
+    esac
+done
+exec /usr/bin/xcodebuild "$@" \
+    CODE_SIGN_IDENTITY= \
+    "CODE_SIGN_IDENTITY[sdk=*]=" \
+    CODE_SIGNING_REQUIRED=NO \
+    CODE_SIGNING_ALLOWED=NO \
+    CODE_SIGN_STYLE=Manual \
+    DEVELOPMENT_TEAM= \
+    PROVISIONING_PROFILE_SPECIFIER= \
+    PROVISIONING_PROFILE=
+EOF
+    chmod +x "$XCB_WRAP_DIR/xcodebuild"
+    export PATH="$XCB_WRAP_DIR:$PATH"
 fi
 
 java -version

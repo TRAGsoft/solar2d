@@ -75,9 +75,30 @@ mkdir -p "${UNIVERSAL_OUTPUTFOLDER}"
 # passing through this setting will break bitcode generation
 unset TOOLCHAINS
 
+# Forward signing-disabled state to nested xcodebuild. The outer xcodebuild may
+# have been invoked with CODE_SIGNING_REQUIRED=NO (e.g. CI without a keychain);
+# those become env vars in this build phase but are not auto-propagated as
+# command-line build settings to nested xcodebuild calls, so the nested ones
+# would fall back to the project file's signing identity and fail in
+# GatherProvisioningInputs. Pass them explicitly when no signing is wanted.
+NOSIGN_ARGS=()
+if [ "${CODE_SIGNING_REQUIRED}" = "NO" ] || [ "${CODE_SIGNING_ALLOWED}" = "NO" ]
+then
+	NOSIGN_ARGS=(
+		"CODE_SIGN_IDENTITY="
+		"CODE_SIGN_IDENTITY[sdk=*]="
+		"CODE_SIGNING_REQUIRED=NO"
+		"CODE_SIGNING_ALLOWED=NO"
+		"CODE_SIGN_STYLE=Manual"
+		"DEVELOPMENT_TEAM="
+		"PROVISIONING_PROFILE_SPECIFIER="
+		"PROVISIONING_PROFILE="
+	)
+fi
+
 # STEP 1. Build Device and Simulator versions
-xcodebuild -project "${PROJECT_FILE_PATH}" -target "${TARGET_XCODE}" -configuration ${CONFIGURATION} -sdk $SDK_DEVICE ONLY_ACTIVE_ARCH=NO BUILD_DIR="${OUTPUT_DIR}" BUILD_ROOT="${OUTPUT_DIR}" OBJROOT="${OUTPUT_DIR}/DependentBuilds" build
-xcodebuild -project "${PROJECT_FILE_PATH}" -target "${TARGET_XCODE}" -configuration ${CONFIGURATION} -sdk $SDK_SIMULATOR ONLY_ACTIVE_ARCH=NO BUILD_DIR="${OUTPUT_DIR}" BUILD_ROOT="${OUTPUT_DIR}" OBJROOT="${OUTPUT_DIR}/DependentBuilds" build
+xcodebuild -project "${PROJECT_FILE_PATH}" -target "${TARGET_XCODE}" -configuration ${CONFIGURATION} -sdk $SDK_DEVICE ONLY_ACTIVE_ARCH=NO BUILD_DIR="${OUTPUT_DIR}" BUILD_ROOT="${OUTPUT_DIR}" OBJROOT="${OUTPUT_DIR}/DependentBuilds" "${NOSIGN_ARGS[@]}" build
+xcodebuild -project "${PROJECT_FILE_PATH}" -target "${TARGET_XCODE}" -configuration ${CONFIGURATION} -sdk $SDK_SIMULATOR ONLY_ACTIVE_ARCH=NO BUILD_DIR="${OUTPUT_DIR}" BUILD_ROOT="${OUTPUT_DIR}" OBJROOT="${OUTPUT_DIR}/DependentBuilds" "${NOSIGN_ARGS[@]}" build
 
 # STEP 2. Copy the framework structure (from $SDK_DEVICE build) to the universal folder
 # cp -R "${OUTPUT_DIR}/${CONFIGURATION}-$SDK_DEVICE/${TARGET_XCODE}.framework" "${UNIVERSAL_OUTPUTFOLDER}/"

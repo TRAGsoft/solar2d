@@ -13,18 +13,18 @@ env:
 jobs:
   source-code:
     name: Check out and process source code
-    if: "!contains(github.ref, 'refs/tags/') || github.repository == 'pouwelsjochem/solar2d'"
+    if: "!contains(github.ref, 'refs/tags/') || github.repository == 'TRAGsoft/solar2d'"
     runs-on: macos-26
     steps:
       - run: CDR="$(basename "$(pwd)")" ; cd .. ; rm -rf "$CDR" ; mkdir -p "$CDR" ; cd "$CDR"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
       - run: ./tools/GHAction/daily_env.sh
       - name: Set daily build
         run: ./tools/GHAction/process_sources.sh
       - name: Upload Source bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: SourceCode
           path: ./output
@@ -36,7 +36,7 @@ jobs:
     steps:
       - run: CDR="$(basename "$(pwd)")" ; cd .. ; rm -rf "$CDR" ; mkdir -p "$CDR" ; cd "$CDR"
       - name: Get processed code
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: SourceCode
           path: SourceCode
@@ -44,11 +44,12 @@ jobs:
         run: tar -xzf SourceCode/corona.tgz
       - run: ./tools/GHAction/daily_env.sh
       - name: Build Native
+        # CERT_PASSWORD intentionally unset: this workflow only targets Windows + Switch
+        # and the Windows job deletes the tvOS/mac frameworks anyway. build_native.sh
+        # skips keychain setup entirely when CERT_PASSWORD is empty.
         run: JAVA_HOME="${JAVA_HOME_17_X64:-$JAVA_HOME_17_arm64}" ./tools/GHAction/build_native.sh
-        env:
-          CERT_PASSWORD: ${{ secrets.CertPassword }}
       - name: Upload Corona Native
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Native
           path: ./output
@@ -60,7 +61,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Get processed code
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: SourceCode
           path: SourceCode
@@ -71,18 +72,23 @@ jobs:
           7z x -snld corona.tar
           ver > nul
       - name: Checkout Switch specific source code (under NDA)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          repository: pouwelsjochem/solar2d-platform-switch
+          repository: TRAGsoft/solar2d-platform-switch
           token: ${{ secrets.PLATFORM_SWITCH_REPO_PAT }}
           path: platform\switch
+          # Explicit ref so actions/checkout skips the GET /repos REST call to
+          # discover the default branch. That call 404s for this repo even
+          # though the PAT works fine at the git protocol level (probably
+          # because the PAT isn't SAML-SSO authorized for the TRAGsoft org).
+          ref: main
       - run: ./tools/GHAction/daily_env.sh
         shell: bash
       - run: mkdir -f docs
       - name: Move docs outside the directory
         run: mv docs ../docs
       - name: Get Corona Native
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: Native
           path: Native
@@ -111,33 +117,175 @@ jobs:
           7z x redist.win32.7z -o"platform/windows/Bin/redist" -y
       - name: Download Solar2D Nintendo Dev Environment
         shell: pwsh
+        env:
+          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
+          BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
         run: |
-          Invoke-WebRequest -Uri "https://mega.nz/MEGAcmdSetup64.exe" -OutFile "megacmd_setup.exe"
-          .".\megacmd_setup.exe" /S | Write-Verbose
-          $env:PATH += ";$env:LOCALAPPDATA\MEGAcmd"
-          mega-login "${{ secrets.MEGA_NZ_USERNAME }}" "${{ secrets.MEGA_NZ_PASSWORD }}"
-          mega-get -m "solar2d_environment.megazarf" "C:\solar2d_environment.megazarf"
-          mega-get -m "ndi_setup-2.5.5.exe" "C:\ndi_setup-2.5.5.exe"
-      - name: Install Solar2D Nintendo Dev Environment
+          $headers = @{ "AccessKey" = $env:BUNNY_STORAGE_ACCESS_KEY }
+          $base = "https://storage.bunnycdn.com/$env:BUNNY_STORAGE_ZONE"
+          Invoke-WebRequest -Uri "$base/solar2d_environment.megazarf" -Headers $headers -OutFile "D:\solar2d_environment.megazarf"
+          Invoke-WebRequest -Uri "$base/nnpm_setup-1.8.2.exe" -Headers $headers -OutFile "D:\nnpm_setup-1.8.2.exe"
+      - name: Install Nintendo Package Manager and import Solar2D environment
         shell: pwsh
         run: |
-          ."C:\ndi_setup-2.5.5.exe" /SILENT | Write-Verbose
-
-          $GS_FILE = "$env:LocalAppData\Nintendo\NDI\NDICmdGS.json"
-          ."$env:ProgramFiles\Nintendo\Nintendo Dev Interface\NDICmd.exe" SaveGS "$GS_FILE"
-          (Get-Content "$GS_FILE").Replace("`"UserName`": null", "`"UserName`": `"${{ secrets.NINTENDO_DEVELOPER_ID }}`"") | Set-Content "$GS_FILE"
-          (Get-Content "$GS_FILE").Replace("`"NonInteractivePassword`": `"`"", "`"NonInteractivePassword`": `"${{ secrets.NINTENDO_DEVELOPER_PASSWORD }}`"") | Set-Content "$GS_FILE"
-          (Get-Content "$GS_FILE").Replace("`"Name`": null", "`"Name`": `"Solar2D`"") | Set-Content "$GS_FILE"
-          (Get-Content "$GS_FILE").Replace("`"RootDir`": null", "`"RootDir`": `"C:\\Nintendo`"") | Set-Content "$GS_FILE"
-
-          ."$env:ProgramFiles\Nintendo\Nintendo Dev Interface\NDICmd.exe" mz Install "C:\solar2d_environment.megazarf"
+          Start-Process -FilePath "D:\nnpm_setup-1.8.2.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          $nnpm = "$env:ProgramFiles\Nintendo\Nintendo Package Manager\nnpm.exe"
+          if (-not (Test-Path $nnpm)) { throw "nnpm.exe not found after install at $nnpm" }
+          & $nnpm envs import --archive-file "D:\solar2d_environment.megazarf" --destination "D:\Nintendo\Solar2D" --accept-eula --accept-installation-warning --ignore-path-length
+          if ($LASTEXITCODE -ne 0) { throw "nnpm envs import failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "D:\Nintendo\Solar2D\NintendoSDK")) { throw "Expected D:\Nintendo\Solar2D\NintendoSDK missing after import" }
+      - name: Configure git auth for platform-switch setup
+        shell: bash
+        env:
+          PAT: ${{ secrets.PLATFORM_SWITCH_REPO_PAT }}
+        run: |
+          # setup.bat git-clones from github.com URLs without embedded auth.
+          # On a non-interactive runner that fails because git tries to prompt
+          # for username/password. Inject the PAT into github.com URLs so the
+          # clones authenticate. Public repos (e.g. coronalabs/corona) ignore
+          # the auth; private repos use it.
+          git config --global url."https://x-access-token:$PAT@github.com/".insteadOf "https://github.com/"
+          # setup.bat clones the upstream NDA repo at solar2d/platform-switch.
+          # This PAT belongs to scottrules44 and likely has no access to the
+          # solar2d org. Redirect that specific URL to the TRAGsoft fork,
+          # which the PAT does have read access to.
+          git config --global url."https://x-access-token:$PAT@github.com/TRAGsoft/solar2d-platform-switch.git".insteadOf "https://github.com/solar2d/platform-switch.git"
+      - name: Run platform-switch setup (clones corona + switch)
+        shell: cmd
+        working-directory: platform\switch
+        run: |
+          set NINTENDO_SDK_ROOT=D:\Nintendo\Solar2D\NintendoSDK
+          rem setup.bat ends in `pause` which hangs CI (no TTY). Redirect nul into
+          rem the script so pause reads EOF and exits immediately.
+          call setup.bat ^< nul
+      - name: Download Switch plugin sources (utf8, memoryBitmap)
+        shell: cmd
+        working-directory: platform\switch\plugins
+        run: |
+          rem setup.bat does NOT call this; the plugin .vcxprojs expect
+          rem `plugins\utf8\plugin\` and `plugins\memoryBitmap\plugin\` to be
+          rem populated by these public-repo clones. download_plugins.cmd also
+          rem ends in `pause`, so redirect nul.
+          call download_plugins.cmd ^< nul
+      - name: Workaround buggy vcxproj include paths (junctions)
+        shell: cmd
+        run: |
+          rem Two known bugs in platform-switch repo Release|NX64 vcxprojs:
+          rem   1. ALMixer.vcxproj references `..\..\..\external\mojoAL\AL` which
+          rem      resolves to `<workspace>\external\mojoAL\AL` (doesn't exist).
+          rem      The actual mojoAL is at platform\switch\mojoAL.
+          rem   2. utf8.vcxproj and websockets.vcxproj use `..\..\..\external\lua-5.1.3\src`
+          rem      from `platform/switch/plugins/<name>/`. That's 3 ups → workspace/platform/external,
+          rem      which doesn't exist. The real path needs 4 ups to reach workspace/external.
+          rem Create NTFS junctions so the broken paths resolve correctly.
+          if not exist external\mojoAL mklink /J external\mojoAL platform\switch\mojoAL
+          if not exist platform\external mklink /J platform\external external
+          rem Oasis.NX.Deploy.targets (post-link step) junctions platform\test\assets2
+          rem into the build output. setup.bat creates it inside its redundant
+          rem nested clone, NOT at the workspace root, so we create it here.
+          if not exist platform\test\assets2 mkdir platform\test\assets2
+          if not exist platform\test\assets2\main.lua type nul > platform\test\assets2\main.lua
+      - name: Patch Switch port headers (remove bogus `override` keywords)
+        shell: bash
+        run: |
+          set -ex
+          # GetVendorId/GetProductId don't exist in PlatformInputDevice base.
+          sed -i \
+            -e 's|virtual U16 GetVendorId() override;|virtual U16 GetVendorId();|' \
+            -e 's|virtual U16 GetProductId() override;|virtual U16 GetProductId();|' \
+            platform/switch/Solar2D/Rtt_NintendoInputDevice.h
+          # CreateRenderingStream() (no args) and SaveBitmap(*, Data&) have
+          # different signatures than the base — they're new methods, not
+          # overrides. Strip the `override` keyword. After our librtt patches
+          # made the base methods non-pure, the class no longer needs to
+          # implement them at all.
+          sed -i \
+            -e 's|virtual RenderingStream\* CreateRenderingStream() const override;|virtual RenderingStream* CreateRenderingStream() const;|' \
+            -e 's|virtual void SaveBitmap(PlatformBitmap\* bitmap, Rtt::Data<const char> & pngBytes) const override;|virtual void SaveBitmap(PlatformBitmap* bitmap, Rtt::Data<const char> \& pngBytes) const;|' \
+            platform/switch/Solar2D/Rtt_NintendoPlatform.h
+          # Sanity check
+          grep -c 'GetVendorId();' platform/switch/Solar2D/Rtt_NintendoInputDevice.h
+          grep -c 'CreateRenderingStream() const;$' platform/switch/Solar2D/Rtt_NintendoPlatform.h
+      - name: Patch memoryBitmap.vcxproj to add librtt include path
+        shell: pwsh
+        run: |
+          # memoryBitmap.vcxproj only has `..\..\..\external\lua-5.1.3\src` in
+          # its include path (which our `platform\external` junction fixes to
+          # reach external/lua-5.1.3/src). But it never adds librtt/Corona for
+          # CoronaAssert.h. Inject `..\..\..\..\librtt\Corona;..\..\..\..\librtt`
+          # before every AdditionalIncludeDirectories block.
+          $path = "platform\switch\plugins\memoryBitmap\memoryBitmap.vcxproj"
+          $content = Get-Content $path -Raw
+          $content = $content -replace `
+            '<AdditionalIncludeDirectories>(\.\.\\\.\.\\\.\.\\external\\lua-5\.1\.3\\src)</AdditionalIncludeDirectories>', `
+            '<AdditionalIncludeDirectories>..\..\..\..\librtt\Corona;..\..\..\..\librtt;$1</AdditionalIncludeDirectories>'
+          Set-Content -Path $path -Value $content -NoNewline
+          # Sanity check
+          if (-not ((Get-Content $path -Raw) -match 'librtt\\Corona')) { throw "librtt\Corona path not injected" }
+      - name: Patch Solar2D.vcxproj (inject ClCompile entries the port omits)
+        shell: pwsh
+        run: |
+          # The Switch port's published Solar2D.vcxproj doesn't list these librtt
+          # sources, but surviving librtt code (Rtt_LuaLibDisplay,
+          # Rtt_SpriteObject, Rtt_PlatformInputDevice, Rtt_PlatformOpenALPlayer)
+          # calls into them. Inject right after the Rtt_Runtime.cpp entry.
+          $path = "platform\switch\Solar2D\Solar2D.vcxproj"
+          $content = Get-Content $path -Raw
+          $missing = @(
+            '    <ClCompile Include="..\..\..\librtt\Input\Rtt_ControllerTypeClassifier.cpp" />',
+            '    <ClCompile Include="..\..\..\librtt\Input\Rtt_GameControllerDB.cpp" />',
+            '    <ClCompile Include="..\..\..\librtt\Rtt_PlatformAudioSessionManager.cpp" />'
+          ) -join "`r`n"
+          $content = $content -replace `
+            '(<ClCompile Include="\.\.\\\.\.\\\.\.\\librtt\\Rtt_Runtime\.cpp"\s*/>)', `
+            "`$1`r`n$missing"
+          Set-Content -Path $path -Value $content -NoNewline
+          # Sanity checks
+          if (-not ((Get-Content $path -Raw) -match 'Rtt_ControllerTypeClassifier\.cpp')) { throw "Rtt_ControllerTypeClassifier.cpp not injected" }
+          if (-not ((Get-Content $path -Raw) -match 'Rtt_GameControllerDB\.cpp')) { throw "Rtt_GameControllerDB.cpp not injected" }
+          if (-not ((Get-Content $path -Raw) -match 'Rtt_PlatformAudioSessionManager\.cpp')) { throw "Rtt_PlatformAudioSessionManager.cpp not injected" }
       - name: Put nxtemplate in place
         shell: cmd
         run: |
-          set NINTENDO_SDK_ROOT=C:\Nintendo\Solar2D\NintendoSDK
-
-          call platform\switch\build_release_template.bat
-          mv platform\switch\nxtemplate platform\windows\Bin\Corona\Resources
+          set NINTENDO_SDK_ROOT=D:\Nintendo\Solar2D\NintendoSDK
+          rem build_release_template.bat needs %CORONA_PATH%\7za.exe to pack
+          rem the nxtemplate archive. Point at the in-repo Build.Tools dir,
+          rem which already ships 7za.exe.
+          set CORONA_PATH=%WORKSPACE%\platform\windows\Build.Tools
+          rem Pre-set COPY_INSTALL=N so the bat's Step 7 `set /p` reads no
+          rem input but the var keeps the N value, skipping the optional copy.
+          rem Also pipe nul to stdin so any `pause` statements return EOF
+          rem instead of blocking CI on a phantom terminal.
+          set COPY_INSTALL=N
+          type nul | call platform\switch\build_release_template.bat
+          rem The bat leaves nxtemplate inside the build output at
+          rem NX64\Release\Rtt.nspd\program0.ncd\nxtemplate and copies it
+          rem to NX64\Release\nxtemplate. Move the latter into the Corona
+          rem simulator's Resources dir (which we create here, since the
+          rem simulator build hasn't run yet to materialize it).
+          if not exist platform\windows\Bin\Corona\Resources mkdir platform\windows\Bin\Corona\Resources
+          mv platform\switch\NX64\Release\nxtemplate platform\windows\Bin\Corona\Resources\
+      - name: Install missing VC components (MFC)
+        # The windows-2022 runner ships VS 2022 Enterprise without MFC. The
+        # Corona.Debugger .rc files require afxres.h, so building Corona.SDK.sln
+        # fails with RC1015/MSB8041 unless MFC is installed. Mirrors the
+        # `Missing VC Components` step from build.yml on master.
+        shell: powershell
+        run: |
+          Set-Location "C:\Program Files (x86)\Microsoft Visual Studio\Installer\"
+          $InstallPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
+          $componentsToAdd = @(
+            "Microsoft.VisualStudio.Component.VC.14.29.16.11.MFC"
+          )
+          [string]$workloadArgs = $componentsToAdd | ForEach-Object {" --add " +  $_}
+          $Arguments = ('/c', "vs_installer.exe", 'modify', '--installPath', "`"$InstallPath`"",$workloadArgs, '--quiet', '--norestart')
+          $process = Start-Process -FilePath cmd.exe -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -eq 0) {
+              Write-Host "MFC components installed"
+          } else {
+              Write-Host "MFC install failed with code $($process.ExitCode)"
+              exit 1
+          }
       - name: Build Corona Simulator
         shell: cmd
         run: |
@@ -153,7 +301,7 @@ jobs:
           cp -v ./platform/windows/Bin/Corona.SDK.Installer/Corona.msi output/Solar2D-${{ env.YEAR }}.${{ env.BUILD }}.${{ env.FORK_BUILD_NAME }}.msi
         shell: bash
       - name: Upload Windows Corona artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Simulator-Windows
           path: ./output
