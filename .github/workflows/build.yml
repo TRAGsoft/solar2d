@@ -290,11 +290,10 @@ jobs:
       - name: Download Solar2D Nintendo Dev Environment
         shell: pwsh
         env:
-          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
           BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
         run: |
           $headers = @{ "AccessKey" = $env:BUNNY_STORAGE_ACCESS_KEY }
-          $base = "https://storage.bunnycdn.com/$env:BUNNY_STORAGE_ZONE"
+          $base = "https://storage.bunnycdn.com/solar2d-platform-switch"
           Invoke-WebRequest -Uri "$base/solar2d_environment.megazarf" -Headers $headers -OutFile "D:\solar2d_environment.megazarf"
           Invoke-WebRequest -Uri "$base/nnpm_setup-1.8.2.exe" -Headers $headers -OutFile "D:\nnpm_setup-1.8.2.exe"
       - name: Install Nintendo Package Manager and import Solar2D environment
