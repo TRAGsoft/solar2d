@@ -13,6 +13,12 @@ env:
   BUILD_NUMBER: 3730
   YEAR: 2026
   FORK_BUILD_NAME: l
+  # Nintendo Switch toolchain pins. Bump in lockstep with a new upload to
+  # the solar2d-platform-switch Bunny.net storage zone. Older Solar2D
+  # releases keep their own pins, so they continue to download the same
+  # megazarf they shipped with as long as the file stays in the zone.
+  NX_SOLAR2D_MEGAZARF: solar2d_environment_NativeSDK22.2.0.megazarf
+  NX_NNPM_INSTALLER: nnpm_setup-1.8.2.exe
 
 jobs:
   source-code:
@@ -294,15 +300,15 @@ jobs:
         run: |
           $headers = @{ "AccessKey" = $env:BUNNY_STORAGE_ACCESS_KEY }
           $base = "https://storage.bunnycdn.com/solar2d-platform-switch"
-          Invoke-WebRequest -Uri "$base/solar2d_environment.megazarf" -Headers $headers -OutFile "D:\solar2d_environment.megazarf"
-          Invoke-WebRequest -Uri "$base/nnpm_setup-1.8.2.exe" -Headers $headers -OutFile "D:\nnpm_setup-1.8.2.exe"
+          Invoke-WebRequest -Uri "$base/$env:NX_SOLAR2D_MEGAZARF" -Headers $headers -OutFile "D:\$env:NX_SOLAR2D_MEGAZARF"
+          Invoke-WebRequest -Uri "$base/$env:NX_NNPM_INSTALLER" -Headers $headers -OutFile "D:\$env:NX_NNPM_INSTALLER"
       - name: Install Nintendo Package Manager and import Solar2D environment
         shell: pwsh
         run: |
-          Start-Process -FilePath "D:\nnpm_setup-1.8.2.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          Start-Process -FilePath "D:\$env:NX_NNPM_INSTALLER" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
           $nnpm = "$env:ProgramFiles\Nintendo\Nintendo Package Manager\nnpm.exe"
           if (-not (Test-Path $nnpm)) { throw "nnpm.exe not found after install at $nnpm" }
-          & $nnpm envs import --archive-file "D:\solar2d_environment.megazarf" --destination "D:\Nintendo\Solar2D" --accept-eula --accept-installation-warning --ignore-path-length
+          & $nnpm envs import --archive-file "D:\$env:NX_SOLAR2D_MEGAZARF" --destination "D:\Nintendo\Solar2D" --accept-eula --accept-installation-warning --ignore-path-length
           if ($LASTEXITCODE -ne 0) { throw "nnpm envs import failed with exit code $LASTEXITCODE" }
           if (-not (Test-Path "D:\Nintendo\Solar2D\NintendoSDK")) { throw "Expected D:\Nintendo\Solar2D\NintendoSDK missing after import" }
       - name: Configure git auth for platform-switch setup
@@ -389,27 +395,6 @@ jobs:
             '<AdditionalIncludeDirectories>..\..\..\..\librtt\Corona;..\..\..\..\librtt;$1</AdditionalIncludeDirectories>'
           Set-Content -Path $path -Value $content -NoNewline
           if (-not ((Get-Content $path -Raw) -match 'librtt\\Corona')) { throw "librtt\Corona path not injected" }
-      - name: Patch Solar2D.vcxproj (inject ClCompile entries the port omits)
-        shell: pwsh
-        run: |
-          # The Switch port's published Solar2D.vcxproj doesn't list these librtt
-          # sources, but surviving librtt code (Rtt_LuaLibDisplay,
-          # Rtt_SpriteObject, Rtt_PlatformInputDevice, Rtt_PlatformOpenALPlayer)
-          # calls into them. Inject right after the Rtt_Runtime.cpp entry.
-          $path = "platform\switch\Solar2D\Solar2D.vcxproj"
-          $content = Get-Content $path -Raw
-          $missing = @(
-            '    <ClCompile Include="..\..\..\librtt\Input\Rtt_ControllerTypeClassifier.cpp" />',
-            '    <ClCompile Include="..\..\..\librtt\Input\Rtt_GameControllerDB.cpp" />',
-            '    <ClCompile Include="..\..\..\librtt\Rtt_PlatformAudioSessionManager.cpp" />'
-          ) -join "`r`n"
-          $content = $content -replace `
-            '(<ClCompile Include="\.\.\\\.\.\\\.\.\\librtt\\Rtt_Runtime\.cpp"\s*/>)', `
-            "`$1`r`n$missing"
-          Set-Content -Path $path -Value $content -NoNewline
-          if (-not ((Get-Content $path -Raw) -match 'Rtt_ControllerTypeClassifier\.cpp')) { throw "Rtt_ControllerTypeClassifier.cpp not injected" }
-          if (-not ((Get-Content $path -Raw) -match 'Rtt_GameControllerDB\.cpp')) { throw "Rtt_GameControllerDB.cpp not injected" }
-          if (-not ((Get-Content $path -Raw) -match 'Rtt_PlatformAudioSessionManager\.cpp')) { throw "Rtt_PlatformAudioSessionManager.cpp not injected" }
       - name: Put nxtemplate in place
         shell: cmd
         run: |
