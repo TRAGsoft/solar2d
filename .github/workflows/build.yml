@@ -361,25 +361,6 @@ jobs:
           rem nested clone, NOT at the workspace root, so we create it here.
           if not exist platform\test\assets2 mkdir platform\test\assets2
           if not exist platform\test\assets2\main.lua type nul > platform\test\assets2\main.lua
-      - name: Patch Switch port headers (remove bogus `override` keywords)
-        shell: bash
-        run: |
-          set -ex
-          # GetVendorId/GetProductId don't exist in PlatformInputDevice base.
-          sed -i \
-            -e 's|virtual U16 GetVendorId() override;|virtual U16 GetVendorId();|' \
-            -e 's|virtual U16 GetProductId() override;|virtual U16 GetProductId();|' \
-            platform/switch/Solar2D/Rtt_NintendoInputDevice.h
-          # CreateRenderingStream() (no args) and SaveBitmap(*, Data&) have
-          # different signatures than the base — they're new methods, not
-          # overrides. Strip the `override` keyword.
-          sed -i \
-            -e 's|virtual RenderingStream\* CreateRenderingStream() const override;|virtual RenderingStream* CreateRenderingStream() const;|' \
-            -e 's|virtual void SaveBitmap(PlatformBitmap\* bitmap, Rtt::Data<const char> & pngBytes) const override;|virtual void SaveBitmap(PlatformBitmap* bitmap, Rtt::Data<const char> \& pngBytes) const;|' \
-            platform/switch/Solar2D/Rtt_NintendoPlatform.h
-          # Sanity check
-          grep -c 'GetVendorId();' platform/switch/Solar2D/Rtt_NintendoInputDevice.h
-          grep -c 'CreateRenderingStream() const;$' platform/switch/Solar2D/Rtt_NintendoPlatform.h
       - name: Patch memoryBitmap.vcxproj to add librtt include path
         shell: pwsh
         run: |
