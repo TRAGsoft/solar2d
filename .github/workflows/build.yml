@@ -243,7 +243,17 @@ jobs:
         run: |
           7z x -snld SourceCode/corona.tgz
           7z x -snld corona.tar
-          ver > nul     
+          ver > nul
+      - name: Checkout Switch specific source code (under NDA)
+        uses: actions/checkout@v4
+        with:
+          repository: TRAGsoft/solar2d-platform-switch
+          token: ${{ secrets.PLATFORM_SWITCH_REPO_PAT }}
+          path: platform\switch
+          # Explicit ref so actions/checkout skips the GET /repos REST call to
+          # discover the default branch. That call 404s for this repo from CI
+          # even though the PAT works fine at the git protocol level.
+          ref: main
       - run: ./tools/GHAction/daily_env.sh
         shell: bash
       - run: mkdir -f docs
@@ -277,16 +287,110 @@ jobs:
         run: |
           curl -sL https://github.com/coronalabs/binary-data/releases/download/1.0/redist.win32.7z -o redist.win32.7z
           7z x redist.win32.7z -o"platform/windows/Bin/redist" -y
-      # - name: Configure Nintendo SDK
-      #   shell: pwsh
-      #   run: |
-      #     ."platform\switch\ci\ndi_setup-2.5.5.exe" /SILENT
-      #     ."$env:ProgramFiles\Nintendo\Nintendo Dev Interface\NDICmd.exe" -gs CreateEx -name NintendoSDK -root C:\Nintendo -platform NX -version 14.3.0
-      # - name: Put nxtemplate in place
-      #   shell: cmd
-      #   run: |
-      #     call platform\switch\build_release_template.bat
-      #     mv platform\switch\nxtemplate platform\windows\Bin\Corona\Resources
+      - name: Download Solar2D Nintendo Dev Environment
+        shell: pwsh
+        env:
+          BUNNY_STORAGE_ACCESS_KEY: ${{ secrets.BUNNY_STORAGE_ACCESS_KEY }}
+        run: |
+          $headers = @{ "AccessKey" = $env:BUNNY_STORAGE_ACCESS_KEY }
+          $base = "https://storage.bunnycdn.com/solar2d-platform-switch"
+          Invoke-WebRequest -Uri "$base/solar2d_environment-NativeSDK22.2.0.megazarf" -Headers $headers -OutFile "D:\solar2d_environment.megazarf"
+          Invoke-WebRequest -Uri "$base/nnpm_setup-1.8.2.exe" -Headers $headers -OutFile "D:\nnpm_setup.exe"
+      - name: Install Nintendo Package Manager and import Solar2D environment
+        shell: pwsh
+        run: |
+          Start-Process -FilePath "D:\nnpm_setup.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          $nnpm = "$env:ProgramFiles\Nintendo\Nintendo Package Manager\nnpm.exe"
+          if (-not (Test-Path $nnpm)) { throw "nnpm.exe not found after install at $nnpm" }
+          & $nnpm envs import --archive-file "D:\solar2d_environment.megazarf" --destination "D:\Nintendo\Solar2D" --accept-eula --accept-installation-warning --ignore-path-length
+          if ($LASTEXITCODE -ne 0) { throw "nnpm envs import failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "D:\Nintendo\Solar2D\NintendoSDK")) { throw "Expected D:\Nintendo\Solar2D\NintendoSDK missing after import" }
+      - name: Configure git auth for platform-switch setup
+        shell: bash
+        env:
+          PAT: ${{ secrets.PLATFORM_SWITCH_REPO_PAT }}
+        run: |
+          # setup.bat git-clones from github.com URLs without embedded auth.
+          # On a non-interactive runner that fails because git tries to prompt
+          # for username/password. Inject the PAT into github.com URLs so the
+          # clones authenticate. Public repos (e.g. coronalabs/corona) ignore
+          # the auth; private repos use it.
+          git config --global url."https://x-access-token:$PAT@github.com/".insteadOf "https://github.com/"
+          # setup.bat clones the upstream NDA repo at solar2d/platform-switch.
+          # That URL is dead; redirect to the TRAGsoft fork, which the PAT
+          # does have read access to.
+          git config --global url."https://x-access-token:$PAT@github.com/TRAGsoft/solar2d-platform-switch.git".insteadOf "https://github.com/solar2d/platform-switch.git"
+      - name: Run platform-switch setup (clones corona + switch)
+        shell: cmd
+        working-directory: platform\switch
+        run: |
+          set NINTENDO_SDK_ROOT=D:\Nintendo\Solar2D\NintendoSDK
+          rem setup.bat ends in `pause` which hangs CI (no TTY). Redirect nul into
+          rem the script so pause reads EOF and exits immediately.
+          call setup.bat ^< nul
+      - name: Download Switch plugin sources (utf8, memoryBitmap)
+        shell: cmd
+        working-directory: platform\switch\plugins
+        run: |
+          rem setup.bat does NOT call this; the plugin .vcxprojs expect
+          rem `plugins\utf8\plugin\` and `plugins\memoryBitmap\plugin\` to be
+          rem populated by these public-repo clones. download_plugins.cmd also
+          rem ends in `pause`, so redirect nul.
+          call download_plugins.cmd ^< nul
+      - name: Workaround buggy vcxproj include paths (junctions)
+        shell: cmd
+        run: |
+          rem Two known bugs in platform-switch repo Release|NX64 vcxprojs:
+          rem   1. ALMixer.vcxproj references `..\..\..\external\mojoAL\AL` which
+          rem      resolves to `<workspace>\external\mojoAL\AL` (doesn't exist).
+          rem      The actual mojoAL is at platform\switch\mojoAL.
+          rem   2. utf8.vcxproj and websockets.vcxproj use `..\..\..\external\lua-5.1.3\src`
+          rem      from `platform/switch/plugins/<name>/`. That's 3 ups → workspace/platform/external,
+          rem      which doesn't exist. The real path needs 4 ups to reach workspace/external.
+          rem Create NTFS junctions so the broken paths resolve correctly.
+          if not exist external\mojoAL mklink /J external\mojoAL platform\switch\mojoAL
+          if not exist platform\external mklink /J platform\external external
+          rem Oasis.NX.Deploy.targets (post-link step) junctions platform\test\assets2
+          rem into the build output. setup.bat creates it inside its redundant
+          rem nested clone, NOT at the workspace root, so we create it here.
+          if not exist platform\test\assets2 mkdir platform\test\assets2
+          if not exist platform\test\assets2\main.lua type nul > platform\test\assets2\main.lua
+      - name: Patch memoryBitmap.vcxproj to add librtt include path
+        shell: pwsh
+        run: |
+          # memoryBitmap.vcxproj only has `..\..\..\external\lua-5.1.3\src` in
+          # its include path (which our `platform\external` junction fixes to
+          # reach external/lua-5.1.3/src). But it never adds librtt/Corona for
+          # CoronaAssert.h. Inject `..\..\..\..\librtt\Corona;..\..\..\..\librtt`
+          # before every AdditionalIncludeDirectories block.
+          $path = "platform\switch\plugins\memoryBitmap\memoryBitmap.vcxproj"
+          $content = Get-Content $path -Raw
+          $content = $content -replace `
+            '<AdditionalIncludeDirectories>(\.\.\\\.\.\\\.\.\\external\\lua-5\.1\.3\\src)</AdditionalIncludeDirectories>', `
+            '<AdditionalIncludeDirectories>..\..\..\..\librtt\Corona;..\..\..\..\librtt;$1</AdditionalIncludeDirectories>'
+          Set-Content -Path $path -Value $content -NoNewline
+          if (-not ((Get-Content $path -Raw) -match 'librtt\\Corona')) { throw "librtt\Corona path not injected" }
+      - name: Put nxtemplate in place
+        shell: cmd
+        run: |
+          set NINTENDO_SDK_ROOT=D:\Nintendo\Solar2D\NintendoSDK
+          rem build_release_template.bat needs %CORONA_PATH%\7za.exe to pack
+          rem the nxtemplate archive. Point at the in-repo Build.Tools dir,
+          rem which already ships 7za.exe.
+          set CORONA_PATH=%WORKSPACE%\platform\windows\Build.Tools
+          rem Pre-set COPY_INSTALL=N so the bat's Step 7 `set /p` reads no
+          rem input but the var keeps the N value, skipping the optional copy.
+          rem Also pipe nul to stdin so any `pause` statements return EOF
+          rem instead of blocking CI on a phantom terminal.
+          set COPY_INSTALL=N
+          type nul | call platform\switch\build_release_template.bat
+          rem The bat leaves nxtemplate inside the build output at
+          rem NX64\Release\Rtt.nspd\program0.ncd\nxtemplate and copies it
+          rem to NX64\Release\nxtemplate. Move the latter into the Corona
+          rem simulator's Resources dir (which we create here, since the
+          rem simulator build hasn't run yet to materialize it).
+          if not exist platform\windows\Bin\Corona\Resources mkdir platform\windows\Bin\Corona\Resources
+          mv platform\switch\NX64\Release\nxtemplate platform\windows\Bin\Corona\Resources\
       - name: Install Codesigning Tools
         shell: cmd
         run: |
