@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////////
 //
 // This file is part of the Corona game engine.
-// For overview and more information on licensing please refer to README.md 
+// For overview and more information on licensing please refer to README.md
 // Home page: https://github.com/coronalabs/corona
 // Contact: support@coronalabs.com
 //
@@ -38,59 +38,54 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 	 */
 	@Override
 	public int invoke(com.naef.jnlua.LuaState luaState) {
+		final int originalTop = luaState.getTop();
 		String errorMessage = null;
 		String javaStackDump = null;
-		String luaStackDump = null;
-
-		// The first argument in the Lua function describes the error. Extract its error information.
-		if (luaState.isString(1)) {
-			// The error was provided as a string, which is typically the case.
-			errorMessage = luaState.toString(1);
-		}
-		else if (luaState.isJavaObjectRaw(1)) {
-			// JNLua normally provides errors as a LuaError object.
+		com.naef.jnlua.LuaStackTraceElement[] savedLuaStack = null;
+		if (luaState.isJavaObjectRaw(1)) {
 			Object value = luaState.toJavaObjectRaw(1);
 			if (value instanceof com.naef.jnlua.LuaError) {
 				com.naef.jnlua.LuaError luaError = (com.naef.jnlua.LuaError)value;
-				errorMessage = luaError.toString();
-				luaStackDump = getStackTraceFrom(luaError.getLuaStackTrace());
+				errorMessage = luaError.getMessage();
+				if (errorMessage == null && luaError.getCause() != null) {
+					errorMessage = luaError.getCause().toString();
+				}
+				savedLuaStack = luaError.getLuaStackTrace();
 				javaStackDump = getStackTraceFrom(luaError.getCause());
+			} else if (value instanceof com.naef.jnlua.LuaRuntimeException) {
+				com.naef.jnlua.LuaRuntimeException exception = (com.naef.jnlua.LuaRuntimeException)value;
+				errorMessage = exception.getMessage();
+				savedLuaStack = exception.getLuaStackTrace();
+				javaStackDump = getStackTraceFrom(exception.getCause());
 			}
 		}
+
+		String luaStackDump;
+		if (savedLuaStack != null) {
+			luaStackDump = getStackTraceFrom(savedLuaStack);
+			pushStackFramesFrom(luaState, savedLuaStack);
+		} else {
+			luaState.getGlobal("system");
+			luaState.getField(-1, "captureXpcallError");
+			luaState.remove(-2);
+			luaState.pushValue(1);
+			luaState.call(1, 1);
+			if (errorMessage == null) {
+				luaState.getField(-1, "errorMessage");
+				errorMessage = luaState.toString(-1);
+				luaState.pop(1);
+			}
+			luaState.getField(-1, "stackTrace");
+			luaStackDump = luaState.toString(-1);
+			luaState.pop(1);
+			luaState.getField(-1, "stackFrames");
+			luaState.remove(-2);
+		}
+		final int stackFramesIndex = luaState.getTop();
 
 		// If we were unable to extract an error message up above, then use a generic error message.
 		if ((errorMessage == null) || (errorMessage.length() <= 0)) {
 			errorMessage = "Lua runtime error occurred.";
-		}
-
-		// Extract the Java exception stack trace from the error message, if it exists.
-		int index = errorMessage.indexOf(com.naef.jnlua.LuaError.JAVA_STACK_TRACE_HEADER_MESSAGE);
-		if (index > 0) {
-			if (javaStackDump == null) {
-				javaStackDump = errorMessage.substring(index + 1);
-			}
-			errorMessage = errorMessage.substring(0, index);
-		}
-		
-		// Fetch a Lua stack dump by calling the Lua debug.traceback() function.
-		if (luaStackDump == null) {
-			index = luaState.getTop();
-			luaState.getField(com.naef.jnlua.LuaState.GLOBALSINDEX, "debug");
-			if (luaState.isTable(-1)) {
-				luaState.getField(-1, "traceback");
-				if (luaState.isFunction(-1)) {
-					luaState.call(0, 1);
-					if (luaState.isString(-1)) {
-						luaStackDump = luaState.toString(-1);
-					}
-				}
-			}
-			if (luaStackDump.equals("stack traceback:")) {
-				// didn't actually get a stack trace
-				luaStackDump = "";
-			}
-
-			luaState.setTop(index);
 		}
 
 		// Create an exception to be thrown after the error message has been displayed.
@@ -110,6 +105,10 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 		android.util.Log.i("Corona", "ERROR: Runtime error");
 		android.util.Log.i("Corona", builder.toString());
 
+		if (javaStackDump != null && javaStackDump.length() > 0) {
+			luaStackDump = (luaStackDump == null ? "" : luaStackDump) + "\n" + javaStackDump;
+		}
+
 		// Implement the "unhandledError" listener
 		int top = luaState.getTop();
 		boolean bail = true;
@@ -117,20 +116,12 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 		CoronaLua.newEvent( luaState, "unhandledError" );
 
 		// Put the error message and stacktrace in the table that's handed to the handler
-		if ((errorMessage.length() > 0) && (luaStackDump.length() == 0))
-		{
-			// This handles a common case where the error message and the stack trace are combined
-			String[] lines = errorMessage.split("\n", 2);
-			if (lines.length > 1)
-			{
-				errorMessage = lines[0];
-				luaStackDump = "\nstack traceback:\n" + lines[1];
-			}
-		}
 		luaState.pushString( errorMessage );
 		luaState.setField( -2, "errorMessage" );
 		luaState.pushString( luaStackDump );
 		luaState.setField( -2, "stackTrace" );
+		luaState.pushValue( stackFramesIndex );
+		luaState.setField( -2, "stackFrames" );
 
 		CoronaLua.dispatchRuntimeEvent( luaState, 1 );
 
@@ -150,31 +141,37 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 		// By default or if the "unhandledError" listener returns false, we shutdown the app
 		if (bail)
 		{
-			RuntimeException exception = new RuntimeException(builder.toString());
-			exception.setStackTrace(new StackTraceElement[] {});
-
-			// Suspend the Corona runtime.
-			CoronaActivity activity = com.ansca.corona.CoronaEnvironment.getCoronaActivity();
-			if (activity != null) {
-				android.os.Handler handler = activity.getHandler();
-				if (handler != null) {
-					handler.postDelayed(new Runnable() {
-						@Override
-						public void run() {
-							if (fController != null) {
-								fController.stop();
-							}
-						}
-					}, 10);
-				}
-			}
-
-			// Display an alert dialog stating the Lua error.
-			reportError(errorMessage, exception);
+			showRuntimeError(errorMessage, builder.toString());
 		}
 
-		// Return the error message that was originally given to this function.
+		// Return the message and trace, without leaking the temporary stack frames.
+		luaState.setTop(originalTop);
+		luaState.pushString(builder.toString());
 		return 1;
+	}
+
+	void showRuntimeError(String errorMessage, String details) {
+		RuntimeException exception = new RuntimeException(details);
+		exception.setStackTrace(new StackTraceElement[] {});
+
+		// Suspend the Corona runtime.
+		CoronaActivity activity = com.ansca.corona.CoronaEnvironment.getCoronaActivity();
+		if (activity != null) {
+			android.os.Handler handler = activity.getHandler();
+			if (handler != null) {
+				handler.postDelayed(new Runnable() {
+					@Override
+					public void run() {
+						if (fController != null) {
+							fController.stop();
+						}
+					}
+				}, 10);
+			}
+		}
+
+		// Display an alert dialog stating the Lua error.
+		reportError(errorMessage, exception);
 	}
 	
 	/**
@@ -240,17 +237,42 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 		});
 	}
 
+	private void pushStackFramesFrom(com.naef.jnlua.LuaState luaState,
+			com.naef.jnlua.LuaStackTraceElement[] elements) {
+		luaState.newTable();
+		for (int index = 0; index < elements.length; index++) {
+			com.naef.jnlua.LuaStackTraceElement element = elements[index];
+			luaState.newTable();
+			if (element.getFunctionName() != null) {
+				luaState.pushString(element.getFunctionName());
+				luaState.setField(-2, "name");
+			}
+			String source = element.getSourceName();
+			luaState.pushString(source == null ? "C" : "(tail call)".equals(source) ? "tail" : "Lua");
+			luaState.setField(-2, "what");
+			if (source != null && !"(tail call)".equals(source)) {
+				luaState.pushString(source.replace('\\', '/'));
+				luaState.setField(-2, "filename");
+			}
+			if (element.getLineNumber() > 0) {
+				luaState.pushInteger(element.getLineNumber());
+				luaState.setField(-2, "currentline");
+			}
+			luaState.rawSet(-2, index + 1);
+		}
+	}
+
 	/**
 	 * Converts the given Lua stack trace array to a single string.
 	 * @param elements Lua stack trace array received from a LuaError.getLuaStackTrace() method call.
 	 * @return Returns a string containing the entire Lua stack trace given.
 	 *         <p>
-	 *         Returns null if the given argument is null or is an empty array.
+	 *         Returns an empty string if the given argument is null or is an empty array.
 	 */
 	private String getStackTraceFrom(com.naef.jnlua.LuaStackTraceElement[] elements) {
 		// Validate.
 		if ((elements == null) || (elements.length <= 0)) {
-			return null;
+			return "";
 		}
 
 		// Return the given array of Lua stack elements as a single string.

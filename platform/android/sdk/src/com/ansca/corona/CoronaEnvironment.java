@@ -376,6 +376,23 @@ public final class CoronaEnvironment {
 		return luaErrorHandlerFunction.invoke(luaState);
 	}
 	
+	static void showRuntimeError(String message, String details) {
+		sCoronaLuaErrorHandler.showRuntimeError(message, details);
+	}
+
+	/** Reports a saved callback failure using the default Android error handler. */
+	public static void reportLuaError(com.naef.jnlua.LuaState luaState,
+			com.naef.jnlua.LuaRuntimeException exception) {
+		int top = luaState.getTop();
+		try {
+			luaState.pushJavaFunction(sCoronaLuaErrorHandler);
+			luaState.pushJavaObjectRaw(exception);
+			luaState.call(1, 0);
+		} finally {
+			luaState.setTop(top);
+		}
+	}
+
 	/**
 	 * Adds a listener for receiving events from the {@link com.ansca.corona.CoronaRuntime CoronaRuntime}.
 	 * @param listener The listener that will receive events. Cannot be null.

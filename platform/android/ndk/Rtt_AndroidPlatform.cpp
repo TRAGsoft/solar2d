@@ -487,7 +487,7 @@ AndroidPlatform::RequestSystem( lua_State *L, const char *actionName, int option
 void
 AndroidPlatform::RuntimeErrorNotification( const char *errorType, const char *message, const char *stacktrace ) const
 {
-	// Not used on Android
+	fNativeToJavaBridge->ShowRuntimeError( message, stacktrace );
 }
 
 const MCrypto& 

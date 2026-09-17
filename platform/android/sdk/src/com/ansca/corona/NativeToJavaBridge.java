@@ -303,6 +303,11 @@ public class NativeToJavaBridge {
 		return CoronaEnvironment.invokeLuaErrorHandler(luaStateMemoryAddress);
 	}
 
+	protected static void callShowRuntimeError(String message, String stackTrace)
+	{
+		CoronaEnvironment.showRuntimeError(message, message + stackTrace);
+	}
+
 	protected static void callPushLaunchArgumentsToLuaTable(CoronaRuntime runtime, long luaStateMemoryAddress)
 	{
 		CoronaSystemApiListener listener = runtime.getController().getCoronaSystemApiListener();

@@ -449,9 +449,11 @@ LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorList
 	}
 #endif
 	
+#ifndef Rtt_ANDROID_ENV
 	// TODO: this ought to be in a shared header somewhere
 	const char *javaStackTraceSignature = "\nJava Stack Trace:";
 	bool isJavaError = (strstr(briefMessage, javaStackTraceSignature) != NULL);
+#endif
     
     if (Self::HasRuntime( L ))
     {
@@ -466,11 +468,17 @@ LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorList
         
          // If the app set an explicit value for "showRuntimeErrors" then use it, otherwise show errors if code is built with debug symbols (always show syntax errors)
 		bool showRuntimeError = luaDebugAvailable || (strcmp(errorType, "Syntax error") == 0);
+#ifdef Rtt_ANDROID_ENV
+        if ( bail && showRuntimeError )
+        {
+            runtime->Platform().RuntimeErrorNotification( errorType, briefMessage, stackTrace );
+        }
+#else
         if (isJavaError || (bail && showRuntimeError))
         {
             lua_CFunction errfunc = Lua::GetErrorHandler( NULL );
             
-            // Call the Lua error handler if it's defined (we define it on Android to display the crash dialog)
+            // Call the Lua error handler if it's defined.
             if ( errfunc != NULL )
             {
                 (*errfunc)( L );
@@ -481,6 +489,8 @@ LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorList
             }
         }
         
+#endif
+
         // Apparently this is used for automated testing (set application.content.exitOnError in config.lua)
         if (runtime->IsProperty(Runtime::kUseExitOnErrorHandler))
         {

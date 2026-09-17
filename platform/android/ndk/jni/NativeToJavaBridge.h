@@ -82,6 +82,7 @@ class NativeToJavaBridge
 		void OnRuntimeExiting();
 
 		static int InvokeLuaErrorHandler(lua_State *L);
+		void ShowRuntimeError( const char *message, const char *stackTrace );
 
 		void PushLaunchArgumentsToLuaTable(lua_State *L);
 		void PushApplicationOpenArgumentsToLuaTable(lua_State *L);

@@ -489,6 +489,24 @@ NativeToJavaBridge::InvokeLuaErrorHandler(lua_State *L)
 }
 
 void
+NativeToJavaBridge::ShowRuntimeError( const char *message, const char *stackTrace )
+{
+	jclassInstance bridge( GetJNIEnv(), kNativeToJavaBridge );
+	if ( bridge.isValid() )
+	{
+		jmethodID mid = bridge.getEnv()->GetStaticMethodID( bridge.getClass(),
+			"callShowRuntimeError", "(Ljava/lang/String;Ljava/lang/String;)V" );
+		if ( mid != NULL )
+		{
+			jstringParam messageJ( bridge.getEnv(), message );
+			jstringParam stackTraceJ( bridge.getEnv(), stackTrace );
+			bridge.getEnv()->CallStaticVoidMethod( bridge.getClass(), mid,
+				messageJ.getValue(), stackTraceJ.getValue() );
+		}
+	}
+}
+
+void
 NativeToJavaBridge::PushLaunchArgumentsToLuaTable(lua_State *L)
 {
 	NativeTrace trace( "NativeToJavaBridge::PushLaunchArgumentsToLuaTable" );
