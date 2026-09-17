@@ -616,6 +616,8 @@
 			filePatterns = "*.lua";
 			fileType = pattern.proxy;
 			inputFiles = (
+				"$(SRCROOT)/../../bin/rcc.lua",
+				"$(SRCROOT)/../../bin/xcode/build_rule_lua.sh",
 			);
 			isEditable = 1;
 			outputFiles = (
@@ -629,6 +631,8 @@
 			filePatterns = "*.lua";
 			fileType = pattern.proxy;
 			inputFiles = (
+				"$(SRCROOT)/../../bin/rcc.lua",
+				"$(SRCROOT)/../../bin/xcode/build_rule_lua.sh",
 			);
 			isEditable = 1;
 			outputFiles = (

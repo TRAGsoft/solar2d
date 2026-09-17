@@ -1,6 +1,6 @@
 function usage( arg0 )
 	print( "USAGE" )
-	print( "\t" .. arg0 .. " [-c compiler_path] [-Olevel] [-g] [-o outfile] lua_infile" )
+	print( "\t" .. arg0 .. " [-c compiler_path] [-Olevel] [-g] [-r engine_root] [-o outfile] lua_infile" )
 	print( "" )
 	print( "SYNOPSIS" )
 	print( "\tCreates Loadable Unit (.lu) files" )
@@ -13,6 +13,8 @@ function usage( arg0 )
 	print( "\t\tProduces debugging information" )
 	print( "\t-Olevel" )
 	print( "\t\tlevel can be either 'Debug' or 'Release'" )
+	print( "\t-r engine_root" )
+	print( "\t\tPreserves debug information for sources under this root, named solar2d/<relative path>." )
 	print( "\t-o outfile" )
 	print( "\t\tPlace output in file 'outfile'. Default is to create a .lu file" )
 	print( "" )
@@ -49,6 +51,8 @@ function parseOptions( argv )
 			result.debug = ( string.upper( string.sub( arg, 3, -1 ) ) == "DEBUG" )
 		elseif ( switchString == "-g" ) then
 			result.debug = true
+		elseif ( switchString == "-r" ) then
+			key = "engineRoot"
 		elseif ( switchString == "-o" ) then
 			key = "outputPath"
 		else
@@ -99,7 +103,40 @@ function parseOptions( argv )
 	return result
 end
 
+local function normalizePath( path )
+	local parts = {}
+	for part in path:gsub( "\\", "/" ):gmatch( "[^/]+" ) do
+		if part == ".." and #parts > 0 and parts[#parts] ~= ".." then
+			table.remove( parts )
+		elseif part ~= "." then
+			parts[#parts + 1] = part
+		end
+	end
+	local prefix = path:sub( 1, 1 ) == "/" and "/" or ""
+	return prefix .. table.concat( parts, "/" )
+end
+
 local options = parseOptions( arg )
+if options.engineRoot then
+	local sourcePath = normalizePath( options.inputPath )
+	local engineRoot = normalizePath( options.engineRoot ) .. "/"
+	local comparableSource, comparableRoot = sourcePath, engineRoot
+	if package.config:sub( 1, 1 ) == "\\" then
+		comparableSource, comparableRoot = sourcePath:lower(), engineRoot:lower()
+	end
+	if comparableSource:sub( 1, #comparableRoot ) == comparableRoot then
+		local input = assert( io.open( options.inputPath, "rb" ) )
+		local source = assert( input:read( "*a" ) )
+		input:close()
+		-- Keep the shebang's newline so source line numbers are unchanged.
+		source = source:gsub( "^#[^\n]*", "" )
+		local chunk = assert( loadstring( source, "@solar2d/" .. sourcePath:sub( #engineRoot + 1 ) ) )
+		local output = assert( io.open( options.outputPath, "wb" ) )
+		assert( output:write( string.dump( chunk ) ) )
+		assert( output:close() )
+		os.exit( 0 )
+	end
+end
 local debugOptions = ( options.debug and "" ) or "-s"
 local commandLine = '"' .. options.compilerDir .. '/luac" ' .. debugOptions .. ' -o "' .. options.outputPath .. '" "' .. options.inputPath .. '"'
 if package.config:sub(1,1) == "\\" then -- are we on Windows?

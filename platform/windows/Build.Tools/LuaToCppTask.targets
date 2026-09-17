@@ -46,7 +46,7 @@
 	</ItemGroup>
 	<Target Name="LuaToCpp"
           BeforeTargets="ClCompile"
-          Inputs="%(LuaToCpp.Identity)"
+          Inputs="%(LuaToCpp.Identity);$(MSBuildThisFileDirectory)LuaToCppFile.bat;$(MSBuildThisFileDirectory)..\..\..\bin\rcc.lua"
           Outputs="$(ProjectDir)Generated Files\%(LuaToCpp.Filename)_luaload.cpp;$(IntDir)%(LuaToCpp.Filename)_luaload.obj">
 		<PropertyGroup Condition="'$(Configuration)'=='Debug'">
 			<!--

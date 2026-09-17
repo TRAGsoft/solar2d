@@ -117,7 +117,7 @@ SRCS =	shell.lua \
 CPPS = $(patsubst %.lua, lua/%.cpp, $(notdir $(SRCS)))
 
 define ruletemp
-$(patsubst %.lua, lua/%.cpp, $(notdir $(1))): $(1)
+$(patsubst %.lua, lua/%.cpp, $(notdir $(1))): $(1) ../../bin/rcc.lua
 	@mkdir -p lua
 	@BUILD_CONFIG=$(UPPER_CONFIG) ./lua_to_native.sh $$< lua/ # $$@
 endef

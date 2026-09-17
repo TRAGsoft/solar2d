@@ -15,11 +15,12 @@ REM Fetch the arguments and remove any double quotes around them.
 REM Note: The "shift" command pops off the leading argument.
 setlocal EnableDelayedExpansion
 set batchFileDirectoryPath=%~dp0
+for %%I in ("%~dp0..\..\..") do set "engineSourceRoot=%%~fI"
 set luaAppPath=%~1
 shift
 set intermediatePath=%~1
 shift
-set sourceFilePath=%~1
+set sourceFilePath=%~f1
 set sourceFileName=%~n1
 shift
 set targetPath=%~1
@@ -79,7 +80,7 @@ REM Compile the Lua script to byte code and generate a C++ file for it.
 set luaDebugReleaseFlag=-ORELEASE
 if DEFINED isDebugFlagSet set luaDebugReleaseFlag=-ODEBUG
 if ERRORLEVEL 1 goto OnError
-"%luaAppPath%\lua.exe" "..\..\..\bin\rcc.lua" -c "%luaAppPath%" %luaDebugReleaseFlag% -o "%intermediatePath%\%sourceFileName%.lu" "%sourceFilePath%"
+"%luaAppPath%\lua.exe" "..\..\..\bin\rcc.lua" -c "%luaAppPath%" %luaDebugReleaseFlag% -r "%engineSourceRoot%" -o "%intermediatePath%\%sourceFileName%.lu" "%sourceFilePath%"
 if ERRORLEVEL 1 goto OnError
 if NOT "%sourceFilePath%"=="%sourceFilePath:plugins=%" (
 	REM Generate a CoronaPluginLuaLoad_*() C function for Lua files under the "plugins" directory.

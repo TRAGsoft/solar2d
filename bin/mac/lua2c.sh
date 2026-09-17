@@ -71,7 +71,7 @@ if [ -f "$SCRIPT_ROOT"/../rcc.lua ]
 then
 	# rttmain repo tool path
 	echo $SCRIPT_ROOT
-	"$LUA_DIR"/lua "$SCRIPT_ROOT"/../rcc.lua -c "$LUA_DIR" -O$BUILD_STYLE -o "$TARGET_TEMP_DIR"/"$INPUT_FILE_BASE".lu "$INPUT_FILE_PATH"
+	"$LUA_DIR"/lua "$SCRIPT_ROOT"/../rcc.lua -c "$LUA_DIR" -O$BUILD_STYLE -r "$SCRIPT_ROOT/../.." -o "$TARGET_TEMP_DIR"/"$INPUT_FILE_BASE".lu "$INPUT_FILE_PATH"
 	checkError
 
 	#"$LUA_DIR"/lua -epackage.path=[[$SCRIPT_ROOT/../../external/loop-2.3-beta/lua/?.lua]] "$SCRIPT_ROOT"/../../external/loop-2.3-beta/lua/precompiler.constant.lua -d "$TARGET_TEMP_DIR" -o "$INPUT_FILE_BASE" -l "$TARGET_TEMP_DIR"/?.lu -n "$INPUT_FILE_BASE"

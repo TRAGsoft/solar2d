@@ -22,6 +22,7 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
 		add_custom_command(
 			OUTPUT "${Lua2CppOutputDir}/${F}"
 			MAIN_DEPENDENCY "${LUA_FILE}"
+			DEPENDS "${CORONA_ROOT}/bin/rcc.lua"
 			COMMAND "${CORONA_ROOT}/platform/windows/Build.Tools/LuaToCppFile.bat" "${CORONA_ROOT}/bin/win" "${Lua2CppOutputDir}" "${LUA_FILE}" "${Lua2CppOutputDir}" ${MODULE_COMMAND1} ${MODULE_COMMAND2}
 			COMMAND ${CMAKE_COMMAND} -E copy "${Lua2CppOutputDir}/${Fout}" "${Lua2CppOutputDir}/${F}"
 		)
@@ -35,6 +36,7 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Windows")
 		add_custom_command(
 			OUTPUT "${Lua2CppOutputDir}/${F}"
 			MAIN_DEPENDENCY "${LUA_FILE}"
+			DEPENDS "${CORONA_ROOT}/bin/rcc.lua"
 			COMMAND "${CORONA_ROOT}/platform/windows/Build.Tools/LuaToCppFile.bat" "${CORONA_ROOT}/bin/win" "${Lua2CppOutputDir}" "${LUA_FILE}" "${Lua2CppOutputDir}" ${MODULE_COMMAND1} ${MODULE_COMMAND2}
 			COMMAND ${CMAKE_COMMAND} -E copy "${Lua2CppOutputDir}/${Fout}" "${Lua2CppOutputDir}/${F}"
 		)
@@ -53,6 +55,7 @@ elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 		add_custom_command(
 			OUTPUT "${Lua2CppOutputDir}/${F}"
 			MAIN_DEPENDENCY "${LUA_FILE}"
+			DEPENDS "${CORONA_ROOT}/bin/rcc.lua"
 			COMMAND ${CMAKE_COMMAND} -E env BUILD_CONFIG="${BUILD_CONFIG}" "${CORONA_ROOT}/platform/android/ndk/lua_to_native.sh" ${MODULE_COMMAND1} ${MODULE_COMMAND2} "${LUA_FILE}" "${Lua2CppOutputDir}/"
 		)
 	endfunction()
@@ -64,6 +67,7 @@ elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 		add_custom_command(
 			OUTPUT "${Lua2CppOutputDir}/${F}"
 			MAIN_DEPENDENCY "${LUA_FILE}"
+			DEPENDS "${CORONA_ROOT}/bin/rcc.lua"
 			COMMAND "${CORONA_ROOT}/bin/mac/lua2c.sh" "${LUA_FILE}" "${Lua2CppOutputDir}/" "${BUILD_CONFIG}" "${CORONA_ROOT}/bin/mac"
 		)
 	endfunction()

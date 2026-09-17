@@ -55,7 +55,7 @@ popd > /dev/null
 SRC_PATH="$SRC_DIR/$SRCFILE"
 
 # If the Lua is newer than the CPP, compile it
-if [ "$SRC_PATH" -nt "$DST_DIR/$SRCNAME.cpp" ]
+if [ "$SRC_PATH" -nt "$DST_DIR/$SRCNAME.cpp" ] || [ "$path/../../../bin/rcc.lua" -nt "$DST_DIR/$SRCNAME.cpp" ]
 then
 	TEMP_DIR=/tmp/$$
 	mkdir $TEMP_DIR
@@ -64,7 +64,7 @@ then
 	pushd "$path/../../../bin" > /dev/null
 
 	LU_PATH=$TEMP_DIR/$SRCNAME.lu
-	mac/lua rcc.lua -c mac -O$LUA_BUILD_TYPE -o "$LU_PATH" "$SRC_PATH"
+	mac/lua rcc.lua -c mac -O$LUA_BUILD_TYPE -r "$path/../../.." -o "$LU_PATH" "$SRC_PATH"
 
 	mac/lua -epackage.path="[[mac/loop/?.lua]]" mac/loop/precompiler.constant.lua -d "$DST_DIR" -o "$SRCNAME" -l "$LU_PATH" -n -m "$MODULE_NAME" "$SRCNAME"
 
