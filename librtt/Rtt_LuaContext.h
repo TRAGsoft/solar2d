@@ -49,9 +49,12 @@ class LuaContext
 
 	public:
 		// Generic, re-entrant Lua callbacks
+		static int CaptureStackTrace( lua_State* L );
+		static int CaptureXpcallError( lua_State* L );
+		static int CaptureCoroutineError( lua_State* L );
 		static int traceback( lua_State* L );
 		static int handleError( lua_State* L, const char *errorType, bool callErrorListener );
-		static bool callUnhandledErrorHandler( lua_State* L, const char *message, const char *stacktrace );
+		static bool callUnhandledErrorHandler( lua_State* L, const char *message, const char *stacktrace, int errorIndex );
 	
 		#if defined( Rtt_DEBUG )
 		static void stackdump( lua_State* L );

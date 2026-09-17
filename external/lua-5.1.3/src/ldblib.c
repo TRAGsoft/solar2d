@@ -324,22 +324,10 @@ static int db_debug (lua_State *L) {
 #define LEVELS1	12	/* size of the first part of the stack */
 #define LEVELS2	10	/* size of the second part of the stack */
 
-static int db_errorfb (lua_State *L) {
-  int level;
+LUALIB_API void lua_traceback (lua_State *L, lua_State *L1, int level) {
+  int base = lua_gettop(L);
   int firstpart = 1;  /* still before eventual `...' */
-  int arg;
-  lua_State *L1 = getthread(L, &arg);
   lua_Debug ar;
-  if (lua_isnumber(L, arg+2)) {
-    level = (int)lua_tointeger(L, arg+2);
-    lua_pop(L, 1);
-  }
-  else
-    level = (L == L1) ? 1 : 0;  /* level 0 may be this own function */
-  if (lua_gettop(L) == arg)
-    lua_pushliteral(L, "");
-  else if (!lua_isstring(L, arg+1)) return 1;  /* message is not a string */
-  else lua_pushliteral(L, "\n");
   lua_pushliteral(L, "stack traceback:");
   while (lua_getstack(L1, level++, &ar)) {
     if (level > LEVELS1 && firstpart) {
@@ -372,8 +360,26 @@ static int db_errorfb (lua_State *L) {
         lua_pushfstring(L, " in function <%s:%d>",
                            (ar.source[0] == '@' ? ar.source+1 : ar.short_src), ar.linedefined);
     }
-    lua_concat(L, lua_gettop(L) - arg);
+    lua_concat(L, lua_gettop(L) - base);
   }
+  lua_concat(L, lua_gettop(L) - base);
+}
+
+static int db_errorfb (lua_State *L) {
+  int level;
+  int arg;
+  lua_State *L1 = getthread(L, &arg);
+  if (lua_isnumber(L, arg+2)) {
+    level = (int)lua_tointeger(L, arg+2);
+    lua_pop(L, 1);
+  }
+  else
+    level = (L == L1) ? 1 : 0;  /* level 0 may be this own function */
+  if (lua_gettop(L) == arg)
+    lua_pushliteral(L, "");
+  else if (!lua_isstring(L, arg+1)) return 1;  /* message is not a string */
+  else lua_pushliteral(L, "\n");
+  lua_traceback(L, L1, level);
   lua_concat(L, lua_gettop(L) - arg);
   return 1;
 }

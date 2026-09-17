@@ -47,6 +47,8 @@
 #endif
 
 #include <string.h>
+#include <string>
+#include <algorithm>
 #include <signal.h>
 
 #include "Rtt_Lua.h"
@@ -205,8 +207,137 @@ static void laction( int i )
 
 #endif // Rtt_DEBUG
 
+static const char kCapturedErrorMetatable[] = "Solar2D.CapturedError";
+
+static void PushStackFrames( lua_State *L, lua_State *thread, int firstLevel )
+{
+	std::string resourceRoot;
+	if ( LuaContext::HasRuntime( L ) )
+	{
+		const MPlatform& platform = LuaContext::GetPlatform( L );
+		String path( &platform.GetAllocator() );
+		platform.PathForFile( NULL, MPlatform::kResourceDir, MPlatform::kDefaultPathFlags, path );
+		if ( path.GetString() )
+		{
+			resourceRoot = path.GetString();
+			std::replace( resourceRoot.begin(), resourceRoot.end(), '\\', '/' );
+			if ( !resourceRoot.empty() && resourceRoot[resourceRoot.size() - 1] != '/' )
+			{
+				resourceRoot += '/';
+			}
+		}
+	}
+
+	lua_newtable( L );
+	lua_Debug frame;
+	for ( int index = 1; index <= 128 && lua_getstack( thread, firstLevel + index - 1, &frame ); index++ )
+	{
+		if ( !lua_getinfo( thread, "Snl", &frame ) ) { break; }
+		lua_newtable( L );
+		lua_pushstring( L, frame.source );
+		lua_setfield( L, -2, "source" );
+		lua_pushstring( L, frame.what );
+		lua_setfield( L, -2, "what" );
+		lua_pushstring( L, frame.name );
+		lua_setfield( L, -2, "name" );
+		if ( frame.currentline > 0 )
+		{
+			lua_pushinteger( L, frame.currentline );
+			lua_setfield( L, -2, "currentline" );
+		}
+		if ( frame.source && frame.source[0] == '@' )
+		{
+			std::string filename( frame.source + 1 );
+			std::replace( filename.begin(), filename.end(), '\\', '/' );
+			if ( !resourceRoot.empty() && filename.compare( 0, resourceRoot.size(), resourceRoot ) == 0 )
+			{
+				filename.erase( 0, resourceRoot.size() );
+			}
+			lua_pushlstring( L, filename.data(), filename.size() );
+			lua_setfield( L, -2, "filename" );
+		}
+		lua_rawseti( L, -2, index );
+
+	}
+}
+
+static int CapturedErrorToString( lua_State *L )
+{
+	lua_getfield( L, 1, "errorMessage" );
+	lua_getfield( L, 1, "stackTrace" );
+	lua_concat( L, 2 );
+	return 1;
+}
+
+static void PushCapturedError( lua_State *L, int errorIndex, lua_State *thread, int firstLevel )
+{
+	if ( lua_getmetatable( L, errorIndex ) )
+	{
+		luaL_getmetatable( L, kCapturedErrorMetatable );
+		bool captured = lua_rawequal( L, -1, -2 ) != 0;
+		lua_pop( L, 2 );
+		if ( captured )
+		{
+			lua_pushvalue( L, errorIndex );
+			return;
+		}
+	}
+
+	lua_newtable( L );
+	if ( lua_isstring( L, errorIndex ) )
+	{
+		lua_pushvalue( L, errorIndex );
+		lua_tostring( L, -1 );
+	}
+	else
+	{
+		lua_pushfstring( L, "Lua error object (%s)", luaL_typename( L, errorIndex ) );
+	}
+	lua_setfield( L, -2, "errorMessage" );
+
+	PushStackFrames( L, thread, firstLevel );
+	lua_setfield( L, -2, "stackFrames" );
+	lua_pushliteral( L, "\n" );
+	lua_traceback( L, thread, firstLevel );
+	lua_concat( L, 2 );
+	lua_setfield( L, -2, "stackTrace" );
+	if ( luaL_newmetatable( L, kCapturedErrorMetatable ) )
+	{
+		lua_pushcfunction( L, CapturedErrorToString );
+		lua_setfield( L, -2, "__tostring" );
+	}
+	lua_setmetatable( L, -2 );
+}
+
+int
+LuaContext::CaptureStackTrace( lua_State *L )
+{
+	int level = luaL_optint( L, 1, 1 );
+	luaL_argcheck( L, level >= 0, 1, "level must be non-negative" );
+	PushStackFrames( L, L, level );
+	return 1;
+}
+
+int
+LuaContext::CaptureXpcallError( lua_State *L )
+{
+	luaL_checkany( L, 1 );
+	PushCapturedError( L, 1, L, 1 );
+	return 1;
+}
+
+int
+LuaContext::CaptureCoroutineError( lua_State *L )
+{
+	luaL_checktype( L, 1, LUA_TTHREAD );
+	luaL_checkany( L, 2 );
+	lua_State *thread = lua_tothread( L, 1 );
+	PushCapturedError( L, 2, thread, 0 );
+	return 1;
+}
+
 bool
-LuaContext::callUnhandledErrorHandler( lua_State* L, const char *message, const char *stacktrace )
+LuaContext::callUnhandledErrorHandler( lua_State* L, const char *message, const char *stacktrace, int errorIndex )
 {
 	// Do not continue if the given Lua state does not belong to a Corona runtime.
 	// If this is the case, then there is no runtime to dispatch an event to.
@@ -227,6 +358,9 @@ LuaContext::callUnhandledErrorHandler( lua_State* L, const char *message, const 
 	lua_setfield( L, -2, "errorMessage" );
 	lua_pushstring( L, stacktrace );
 	lua_setfield( L, -2, "stackTrace" );
+
+	lua_getfield( L, errorIndex, "stackFrames" );
+	lua_setfield( L, -2, "stackFrames" );
 
 	Lua::DispatchRuntimeEvent( L, 1 );
 	
@@ -266,72 +400,15 @@ LuaContext::traceback( lua_State* L )
 int
 LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorListener )
 {
+	const int originalTop = lua_gettop( L );
+	PushCapturedError( L, lua_gettop( L ), L, 1 );
+	const int errorIndex = lua_gettop( L );
+	lua_getfield( L, errorIndex, "errorMessage" );
 	const char *briefMessage = lua_tostring( L, -1 );
-    
-	if (!lua_isstring(L, -1))  /* 'message' not a string? */
-	{
-#ifdef Rtt_AUTHORING_SIMULATOR
-		if (Self::HasRuntime(L))
-		{
-			SimulatorControl::RecordRuntimeError(
-				*Self::GetRuntime(L), L, errorType,
-				"error object is not a string", "" );
-			SimulatorControl::HaltOnRuntimeError( *Self::GetRuntime(L) );
-		}
-#endif
-		return 1;  /* keep it intact */
-	}
-
-	if (briefMessage == NULL)
-	{
-		briefMessage = "";
-	}
-
-	lua_getfield(L, LUA_GLOBALSINDEX, "debug");
-	if (!lua_istable(L, -1)) {
-		lua_pop(L, 1);
-#ifdef Rtt_AUTHORING_SIMULATOR
-		if (Self::HasRuntime(L))
-		{
-			SimulatorControl::RecordRuntimeError(
-				*Self::GetRuntime(L), L, errorType, briefMessage, "" );
-			SimulatorControl::HaltOnRuntimeError( *Self::GetRuntime(L) );
-		}
-#endif
-		return 1;
-	}
-	lua_getfield(L, -1, "traceback");
-	if (!lua_isfunction(L, -1)) {
-		lua_pop(L, 2);
-#ifdef Rtt_AUTHORING_SIMULATOR
-		if (Self::HasRuntime(L))
-		{
-			SimulatorControl::RecordRuntimeError(
-				*Self::GetRuntime(L), L, errorType, briefMessage, "" );
-			SimulatorControl::HaltOnRuntimeError( *Self::GetRuntime(L) );
-		}
-#endif
-		return 1;
-	}
-	lua_pushstring(L, briefMessage); /* provide error to overriders of debug.traceback */
-	lua_pushinteger(L, 2);  /* skip this function and traceback */
-	lua_call(L, 2, 1);  /* call debug.traceback */
-    
+	lua_getfield( L, errorIndex, "stackTrace" );
 	const char *stackTrace = lua_tostring( L, -1 );
-
-	// If the stack trace starts with the brief error message, remove it as we'll add it back later
-    if (strncmp(stackTrace, briefMessage, strlen(briefMessage)) == 0)
-    {
-        stackTrace = &stackTrace[strlen(briefMessage)];
-    }
-    
-	lua_remove( L, -2 ); // pop debug
-
-	// If there isn't a stack trace (e.g. on a syntax error) then set it to the empty string
-	if (stackTrace != NULL && strcmp(stackTrace, "\nstack traceback:") == 0)
-	{
-		stackTrace = "";
-	}
+	lua_pushfstring( L, "%s%s", briefMessage, stackTrace );
+	const int resultIndex = lua_gettop( L );
 
 	CORONA_LOG_ERROR( "%s\n%s%s", errorType, briefMessage, stackTrace );
 
@@ -346,6 +423,8 @@ LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorList
 #ifdef Rtt_AUTHORING_SIMULATOR
 			SimulatorControl::HaltOnRuntimeError( *runtime );
 #endif
+			lua_replace( L, originalTop + 1 );
+			lua_settop( L, originalTop + 1 );
 			return 1;
 		}
 #ifdef Rtt_AUTHORING_SIMULATOR
@@ -360,7 +439,7 @@ LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorList
 	// We call the unhandledError listener (if defined) whether or not we're showing the runtime error popups
 	if ( callErrorListener )
 	{
-		bail = LuaContext::callUnhandledErrorHandler( L, briefMessage, stackTrace );
+		bail = LuaContext::callUnhandledErrorHandler( L, briefMessage, stackTrace, errorIndex );
 	}
 
 #ifdef Rtt_AUTHORING_SIMULATOR
@@ -416,6 +495,9 @@ LuaContext::handleError( lua_State* L, const char *errorType, bool callErrorList
 		runtime->fErrorHandlerRecursionGuard = false;
     }
 	
+	lua_settop( L, resultIndex );
+	lua_replace( L, originalTop + 1 );
+	lua_settop( L, originalTop + 1 );
 	return 1;
 }
 

@@ -1683,6 +1683,9 @@ LuaLibSystem::Initialize( lua_State *L )
         { "hasEventSource", LuaLibSystem::HasEventSource }, // private
         { "getInfo", getInfo },
         { "getTimer", getTimer },
+        { "captureStackTrace", LuaContext::CaptureStackTrace },
+        { "captureXpcallError", LuaContext::CaptureXpcallError },
+        { "captureCoroutineError", LuaContext::CaptureCoroutineError },
         { "openURL", openURL },
         { "canOpenURL", canOpenURL },
         { "vibrate", vibrate },

@@ -35,6 +35,8 @@ LUALIB_API int (luaopen_math) (lua_State *L);
 
 #define LUA_DBLIBNAME	"debug"
 LUALIB_API int (luaopen_debug) (lua_State *L);
+/* Push the readable traceback for a thread, preserving existing stack values. */
+LUALIB_API void (lua_traceback) (lua_State *L, lua_State *thread, int level);
 
 #define LUA_LOADLIBNAME	"package"
 LUALIB_API int (luaopen_package) (lua_State *L);
