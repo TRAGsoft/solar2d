@@ -873,7 +873,7 @@ union luai_Cast { double l_d; long l_l; };
 	#endif
 	#ifdef Rtt_LUA_COMPILER
 		typedef struct lua_State lua_State;
-		LUA_API int lua_compile_files(lua_State *L, int numSources, const char **sources, const char *dstFile, int stripDebug);
+		LUA_API int lua_compile_files(lua_State *L, int numSources, const char **sources, const char *dstFile, int stripDebug, const char *sourceRoot);
 	#endif
 #endif
 #ifdef LUA_WIN_PHONE

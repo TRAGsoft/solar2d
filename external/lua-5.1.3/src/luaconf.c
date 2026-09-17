@@ -212,10 +212,10 @@ LUA_API int lua_wsystem(const char *command)
 }
 
 #ifdef Rtt_LUA_COMPILER
-extern int Rtt_LuaCompile(lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug);
-LUA_API int lua_compile_files(lua_State *L, int numSources, const char **sources, const char *dstFile, int stripDebug)
+extern int Rtt_LuaCompile(lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug, const char* sourceRoot);
+LUA_API int lua_compile_files(lua_State *L, int numSources, const char **sources, const char *dstFile, int stripDebug, const char *sourceRoot)
 {
-	return Rtt_LuaCompile(L, numSources, sources, dstFile, stripDebug);
+	return Rtt_LuaCompile(L, numSources, sources, dstFile, stripDebug, sourceRoot);
 }
 #endif
 

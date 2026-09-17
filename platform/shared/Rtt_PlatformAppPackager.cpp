@@ -72,16 +72,16 @@ static const char *kUserPreferenceCustomDailyBuild = "userPreferenceCustomDailyB
 static const char *kCustomId = "customBuildId";
 static const char *kAppSettingsLuaFile = "AppSettings.lua";
 	
-Rtt_EXPORT int Rtt_LuaCompile( lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug );
+Rtt_EXPORT int Rtt_LuaCompile( lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug, const char* sourceRoot );
 
 #if defined(Rtt_WIN_ENV) && ( _MSC_VER >= 1800 ) && !defined(Rtt_LINUX_ENV)
 /// <remarks>
 ///  On Windows, we export a lua_compile_files() function that calls the equivalent Rtt_LuaCompile() function in "luac.c".
 ///  This allows us to share the same "lua.dll" for both the Corona Simulator and Corona built Windows apps.
 /// </remarks>
-Rtt_EXPORT int Rtt_LuaCompile(lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug)
+Rtt_EXPORT int Rtt_LuaCompile(lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug, const char* sourceRoot)
 {
-	return lua_compile_files(L, numSources, sources, dstFile, stripDebug);
+	return lua_compile_files(L, numSources, sources, dstFile, stripDebug, sourceRoot);
 }
 #endif
 
@@ -751,7 +751,7 @@ CompileScriptsInDirectory( lua_State *L, AppPackagerParams& params, const char *
 						
 						// Compile the file.
 						const char *sources = srcPath;
-						int status = Rtt_LuaCompile( L, 1, & sources, dstPath, params.IsStripDebug() );
+						int status = Rtt_LuaCompile( L, 1, & sources, dstPath, params.IsStripDebug(), baseDir );
 						result = Rtt_VERIFY( 0 == status ) ? true : false;
 						if ( ! result )
 						{
@@ -819,7 +819,7 @@ PlatformAppPackager::CompileScripts( AppPackagerParams * params, const char* tmp
 	snprintf( dstMain, dstMainSize, "%s" LUA_DIRSEP "%s", dstDir, kMainObject );
 
 	const char* pSrcMain = srcMain;
-	bool result = Rtt_VERIFY( Rtt_LuaCompile( fVM, 1, & pSrcMain, dstMain, stripDebug ) );
+	bool result = Rtt_VERIFY( Rtt_LuaCompile( fVM, 1, & pSrcMain, dstMain, stripDebug, srcDir ) );
 
 	free( dstMain );
 	free( srcMain );

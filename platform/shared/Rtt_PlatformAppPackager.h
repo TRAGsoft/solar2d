@@ -283,7 +283,7 @@ class PlatformAppPackager
 		std::vector<std::string> fExcludeLuaFilePatterns;
 };
 
-Rtt_EXPORT int Rtt_LuaCompile( lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug );
+Rtt_EXPORT int Rtt_LuaCompile( lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug, const char* sourceRoot );
 	
 // ----------------------------------------------------------------------------
 

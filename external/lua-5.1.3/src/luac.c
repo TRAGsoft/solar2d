@@ -17,6 +17,7 @@
 
 #include "ldo.h"
 #include "lfunc.h"
+#include "lgc.h"
 #include "lmem.h"
 #include "lobject.h"
 #include "lopcodes.h"
@@ -160,8 +161,17 @@ static int writer(lua_State* L, const void* p, size_t size, void* u)
 struct Smain {
 	int argc;
 	const char** argv;
+	const char* sourceRoot;
 	int result;
 };
+
+static void setSource(lua_State* L, Proto* function, TString* source)
+{
+ int i;
+ function->source = source;
+ luaC_objbarrier(L, function, source);
+ for (i = 0; i < function->sizep; i++) setSource(L, function->p[i], source);
+}
 
 static int pmain(lua_State* L)
 {
@@ -185,6 +195,26 @@ static int pmain(lua_State* L)
 		{
 			const char* filename = argv[i];
 			result = luaL_loadfile(L,filename);
+			if (result == 0 && s->sourceRoot)
+			{
+				size_t rootLength = strlen(s->sourceRoot);
+				if (strncmp(filename, s->sourceRoot, rootLength) == 0)
+				{
+					const char* relativePath = filename + rootLength;
+					luaL_Buffer buffer;
+					while (*relativePath == '/' || *relativePath == '\\') relativePath++;
+					luaL_buffinit(L, &buffer);
+					luaL_addchar(&buffer, '@');
+					for (; *relativePath; relativePath++)
+					{
+						luaL_addchar(&buffer, *relativePath == '\\' ? '/' : *relativePath);
+					}
+					luaL_pushresult(&buffer);
+					setSource(L, toproto(L, -2), rawtsvalue(L->top - 1));
+					lua_pop(L, 1);
+				}
+			}
+
 
 			if ( 0 != result )
 			{
@@ -217,12 +247,13 @@ static int pmain(lua_State* L)
 }
 
 int
-Rtt_LuaCompile( lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug )
+Rtt_LuaCompile( lua_State *L, int numSources, const char** sources, const char* dstFile, int stripDebug, const char* sourceRoot )
 {
     int status = 0;
 	struct Smain s;
 	s.argc = numSources;
 	s.argv = sources;
+	s.sourceRoot = sourceRoot;
 	s.result = 0;
 
 	output = dstFile;
