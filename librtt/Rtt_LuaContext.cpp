@@ -309,6 +309,81 @@ static void PushCapturedError( lua_State *L, int errorIndex, lua_State *thread, 
 	lua_setmetatable( L, -2 );
 }
 
+void
+LuaContext::SetEngineLogEnabled( bool enabled )
+{
+	std::lock_guard<std::mutex> lock( fEngineLogMutex );
+	fEngineLogEnabled = enabled;
+	if ( !enabled ) { fPendingEngineLogs.clear(); }
+}
+
+void
+LuaContext::QueueEngineLog( const char *message, size_t length, void *context )
+{
+	LuaContext *owner = static_cast<LuaContext *>( context );
+	if ( !owner ) { return; }
+	std::lock_guard<std::mutex> lock( owner->fEngineLogMutex );
+	if ( !owner->fEngineLogEnabled || owner->fDispatchingEngineLogs ) { return; }
+	const char *level = NULL;
+	if ( length >= 8 && strncmp( message, "WARNING:", 8 ) == 0 ) { level = "warning"; }
+	else if ( length >= 6 && strncmp( message, "ERROR:", 6 ) == 0 ) { level = "error"; }
+	if ( !level ) { return; }
+
+	// Transport only: drain before enterFrame and unhandledError.
+	// Do not invoke Lua from inside a renderer, decoder, or native logging callback.
+	if ( owner->fPendingEngineLogs.size() == 64 ) { owner->fPendingEngineLogs.pop_front(); }
+	EngineLog entry;
+	size_t messageLength = std::min( length, (size_t)4096 );
+	if ( messageLength < length )
+	{
+		// Do not split a UTF-8 character at the byte limit.
+		while ( messageLength > 0 && (static_cast<unsigned char>( message[messageLength] ) & 0xC0) == 0x80 )
+		{
+			--messageLength;
+		}
+	}
+	entry.message.assign( message, messageLength );
+	entry.level = level;
+	entry.time = GetRuntime( owner->L() )->GetElapsedMS();
+	owner->fPendingEngineLogs.push_back( entry );
+}
+
+void
+LuaContext::DispatchEngineLogs( lua_State *L )
+{
+	LuaContext *owner = GetContext( L );
+	std::deque<EngineLog> pending;
+	{
+		std::lock_guard<std::mutex> lock( owner->fEngineLogMutex );
+		if ( owner->fDispatchingEngineLogs || owner->fPendingEngineLogs.empty() ) { return; }
+		owner->fDispatchingEngineLogs = true;
+		pending.swap( owner->fPendingEngineLogs );
+	}
+	while ( !pending.empty() )
+	{
+		Lua::PushRuntime( L );
+		lua_getfield( L, -1, "dispatchEvent" );
+		lua_insert( L, -2 );
+		CoronaLuaNewEvent( L, "engineLog" );
+		const EngineLog &entry = pending.front();
+		lua_pushlstring( L, entry.message.data(), entry.message.size() );
+		lua_setfield( L, -2, "message" );
+		lua_pushstring( L, entry.level );
+		lua_setfield( L, -2, "level" );
+		lua_pushnumber( L, entry.time );
+		lua_setfield( L, -2, "time" );
+		pending.pop_front();
+		// A logging listener must not replace the original failure or recursively report itself.
+		if ( lua_pcall( L, 2, 0, 0 ) != 0 )
+		{
+			Rtt_LogException( "ERROR: engineLog listener failed: %s", lua_tostring( L, -1 ) ? lua_tostring( L, -1 ) : "non-string error" );
+			lua_pop( L, 1 );
+		}
+	}
+	std::lock_guard<std::mutex> lock( owner->fEngineLogMutex );
+	owner->fDispatchingEngineLogs = false;
+}
+
 int
 LuaContext::CaptureStackTrace( lua_State *L )
 {
@@ -362,6 +437,8 @@ LuaContext::callUnhandledErrorHandler( lua_State* L, const char *message, const 
 	lua_getfield( L, errorIndex, "stackFrames" );
 	lua_setfield( L, -2, "stackFrames" );
 
+	// Deliver pending logs before the error listener can send its report.
+	DispatchEngineLogs( L );
 	Lua::DispatchRuntimeEvent( L, 1 );
 	
 #if defined( Rtt_DEBUG )
@@ -868,6 +945,8 @@ LuaContext::RegisterModuleLoaders( lua_State *L, const luaL_Reg moduleLoaders[],
 int
 LuaContext::DoCall( lua_State* L, int narg, int nresults )
 {
+	ScopedLogSink logSink( LuaContext::QueueEngineLog, LuaContext::HasRuntime( L ) ? LuaContext::GetContext( L ) : NULL );
+
 	int base = lua_gettop(L) - narg;
 
 	int errfunc = 0; // index of errfunc. Default to 0 (i.e. none)
@@ -1122,7 +1201,9 @@ LuaContext::IsBinaryLua( const char* filename )
 LuaContext::LuaContext( ::lua_State* L )
 :	fL( L ),
 	fHandle( LuaContext::GetAllocator( L ), * L ),
-	fModules( 0 )
+	fModules( 0 ),
+	fEngineLogEnabled( false ),
+	fDispatchingEngineLogs( false )
 {
 }
 

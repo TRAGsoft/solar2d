@@ -1524,6 +1524,11 @@ int
 LuaLibSystem::BeginListener( lua_State *L )
 {
     const char* eventName = lua_tostring( L, -1 );
+    if ( eventName && Rtt_StringCompare( eventName, "engineLog" ) == 0 )
+    {
+        LuaContext::GetContext( L )->SetEngineLogEnabled( true );
+        return 0;
+    }
     if ( eventName )
     {
         MPlatformDevice::EventType t = EventTypeForName( eventName );
@@ -1543,6 +1548,11 @@ int
 LuaLibSystem::EndListener( lua_State *L )
 {
     const char* eventName = lua_tostring( L, -1 );
+    if ( eventName && Rtt_StringCompare( eventName, "engineLog" ) == 0 )
+    {
+        LuaContext::GetContext( L )->SetEngineLogEnabled( false );
+        return 0;
+    }
     if ( eventName )
     {
         MPlatformDevice::EventType t = EventTypeForName( eventName );
@@ -1561,7 +1571,7 @@ LuaLibSystem::EndListener( lua_State *L )
 int
 LuaLibSystem::HasEventSource( lua_State *L )
 {
-    bool hasEventSource = false;
+    bool hasEventSource = lua_isstring( L, -1 ) && Rtt_StringCompare( lua_tostring( L, -1 ), "engineLog" ) == 0;
     
     const char* eventName = lua_tostring( L, -1 );
     if ( eventName )

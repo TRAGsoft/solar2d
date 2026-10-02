@@ -15,6 +15,9 @@
 #include "Core/Rtt_ResourceHandle.h"
 
 #include "Rtt_LuaAux.h"
+#include <deque>
+#include <mutex>
+#include <string>
 
 namespace Rtt
 {
@@ -49,6 +52,9 @@ class LuaContext
 
 	public:
 		// Generic, re-entrant Lua callbacks
+		static void QueueEngineLog( const char *message, size_t length, void *context );
+		static void DispatchEngineLogs( lua_State *L );
+		void SetEngineLogEnabled( bool enabled );
 		static int CaptureStackTrace( lua_State* L );
 		static int CaptureXpcallError( lua_State* L );
 		static int CaptureCoroutineError( lua_State* L );
@@ -132,6 +138,16 @@ class LuaContext
 		lua_State* fL;
 		ResourceHandleOwner< lua_State > fHandle;
 		U32 fModules; // Used by Simulator to determine what modules are in use
+		struct EngineLog
+		{
+			std::string message;
+			const char *level;
+			double time;
+		};
+		std::deque<EngineLog> fPendingEngineLogs;
+		std::mutex fEngineLogMutex;
+		bool fEngineLogEnabled;
+		bool fDispatchingEngineLogs;
 };
 
 // ----------------------------------------------------------------------------

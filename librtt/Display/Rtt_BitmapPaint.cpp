@@ -19,6 +19,8 @@
 #include "Display/Rtt_DisplayDefaults.h"
 #include "Renderer/Rtt_RenderData.h"
 #include "Rtt_Runtime.h"
+#include "Rtt_LuaContext.h"
+#include "CoronaLua.h"
 #include "Display/Rtt_TextureFactory.h"
 #include "Display/Rtt_TextureResource.h"
 
@@ -47,8 +49,8 @@ BitmapPaint::NewBitmap( Runtime& runtime, const char* filename, MPlatform::Direc
 		}
 		else
 		{
-			Rtt_TRACE_SIM( ( "ERROR: The file (%s) has already been loaded as a mask, "
-							 "so it cannot be used as an image display object.\n", filename ) );
+			CoronaLuaWarning(runtime.VMContext().L(), "The file (%s) has already been loaded as a mask, "
+				"so it cannot be used as an image display object.", filename);
 		}
 	}
 

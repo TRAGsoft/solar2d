@@ -1679,7 +1679,8 @@ Runtime::End() const
 
 RuntimeGuard::RuntimeGuard( Runtime& runtime )
 :	fRuntime( runtime ),
-	fPlatform( runtime.Platform() )
+	fPlatform( runtime.Platform() ),
+	fLogSink( LuaContext::QueueEngineLog, &runtime.VMContext() )
 {
 	fPlatform.BeginRuntime( runtime );
 }

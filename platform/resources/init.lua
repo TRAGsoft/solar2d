@@ -265,7 +265,7 @@ Runtime._proxy =
 	__newindex = system.__proxynewindex
 }
 
-local needsHardwareSupport = { orientation=true, accelerometer=true, gyroscope=true }
+local eventsRequiringNativeListener = { orientation=true, accelerometer=true, gyroscope=true, engineLog=true }
 
 function Runtime:addEventListener( eventName, listener )
 	local super = self._super
@@ -273,7 +273,7 @@ function Runtime:addEventListener( eventName, listener )
 	local wasAdded = super.addEventListener( self, eventName, listener )
 
 	if ( noListeners ) then
-		if ( needsHardwareSupport[ eventName ] ) then
+		if ( eventsRequiringNativeListener[ eventName ] ) then
 			system.beginListener( eventName )
 		end
 	end
@@ -282,7 +282,7 @@ end
 
 function Runtime:didRemoveListener( eventName )
 	if ( not self:respondsToEvent( eventName ) ) then
-		if ( needsHardwareSupport[ eventName ] ) then
+		if ( eventsRequiringNativeListener[ eventName ] ) then
 			system.endListener( eventName )
 		end
 	end

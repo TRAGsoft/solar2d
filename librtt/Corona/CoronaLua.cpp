@@ -278,7 +278,15 @@ void CoronaLuaLogPrefixV( lua_State *L, const char *prefix, const char *fmt, va_
 	strcat( format, where );
 	strcat( format, fmt );
 
-	Rtt_VLogException( format, arguments );
+	if ( L && Rtt::LuaContext::HasRuntime( L ) )
+	{
+		Rtt::ScopedLogSink logSink( Rtt::LuaContext::QueueEngineLog, Rtt::LuaContext::GetContext( L ) );
+		Rtt_VLogException( format, arguments );
+	}
+	else
+	{
+		Rtt_VLogException( format, arguments );
+	}
 
 	free( format );
 }

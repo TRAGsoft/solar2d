@@ -11,6 +11,7 @@
 #define _Rtt_Runtime_H__
 
 #include "Core/Rtt_Time.h"
+#include "Core/Rtt_Assert.h"
 #include "Rtt_MCallback.h"
 #include "Rtt_MCriticalSection.h"
 #include "Rtt_MPlatform.h"
@@ -349,6 +350,7 @@ class RuntimeGuard
 	private:
 		Runtime& fRuntime;
 		const MPlatform& fPlatform;
+		ScopedLogSink fLogSink;
 };
 
 // ----------------------------------------------------------------------------

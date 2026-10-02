@@ -246,6 +246,10 @@ TextureFactory::FindOrCreate(
 		{
 			result = CreateAndAdd( key, bitmap, true );
 		}
+		else
+		{
+			CoronaLuaWarning(fDisplay.GetL(), "Failed to create bitmap for image '%s'", filename);
+		}
 	}
 
 	return result;

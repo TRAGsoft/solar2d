@@ -45,6 +45,19 @@ static bool linuxIsErrorMsg = false;
 static int fIsLoggingEnabled = 1;
 static Rtt_LogCallback fLogCallback = NULL;
 static void *fLogCallbackContext = NULL;
+#if defined( _MSC_VER )
+static __declspec(thread) Rtt_LogSink fThreadLogSink = { NULL, NULL };
+#else
+static __thread Rtt_LogSink fThreadLogSink = { NULL, NULL };
+#endif
+
+Rtt_LogSink
+Rtt_SetThreadLogSink( Rtt_LogSink sink )
+{
+	Rtt_LogSink previous = fThreadLogSink;
+	fThreadLogSink = sink;
+	return previous;
+}
 
 void
 Rtt_SetLogCallback( Rtt_LogCallback callback, void *context )
@@ -56,7 +69,7 @@ Rtt_SetLogCallback( Rtt_LogCallback callback, void *context )
 void
 Rtt_InvokeLogCallback( const char *format, va_list arguments )
 {
-	if ( ! fLogCallback || ! format )
+	if ( (! fLogCallback && ! fThreadLogSink.callback) || ! format )
 	{
 		return;
 	}
@@ -76,7 +89,14 @@ Rtt_InvokeLogCallback( const char *format, va_list arguments )
 	{
 		messageLength = sizeof( message ) - 1;
 	}
-	fLogCallback( message, messageLength, fLogCallbackContext );
+	if ( fThreadLogSink.callback )
+	{
+		fThreadLogSink.callback( message, messageLength, fThreadLogSink.context );
+	}
+	if ( fLogCallback )
+	{
+		fLogCallback( message, messageLength, fLogCallbackContext );
+	}
 }
 
 /// Enables the logging system.

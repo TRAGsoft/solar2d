@@ -23,6 +23,35 @@ Rtt_EXPORT int Rtt_LogIsEnabled(void);
 Rtt_EXPORT void Rtt_SetLogCallback( Rtt_LogCallback callback, void *context );
 Rtt_EXPORT void Rtt_InvokeLogCallback( const char *format, va_list arguments );
 
+typedef struct Rtt_LogSink
+{
+	Rtt_LogCallback callback;
+	void *context;
+} Rtt_LogSink;
+
+// Returns the previous sink so nested runtime calls can restore their owner.
+Rtt_EXPORT Rtt_LogSink Rtt_SetThreadLogSink( Rtt_LogSink sink );
+
+#ifdef __cplusplus
+namespace Rtt
+{
+class ScopedLogSink
+{
+	public:
+		ScopedLogSink( Rtt_LogCallback callback, void *context )
+		{
+			Rtt_LogSink sink = { callback, context };
+			fPrevious = Rtt_SetThreadLogSink( sink );
+		}
+		~ScopedLogSink() { Rtt_SetThreadLogSink( fPrevious ); }
+	private:
+		ScopedLogSink( const ScopedLogSink& );
+		ScopedLogSink& operator=( const ScopedLogSink& );
+		Rtt_LogSink fPrevious;
+};
+}
+#endif
+
 #if defined( Rtt_MAC_ENV )
 	// On OSX we can easily validate printf-style function arguments
 	Rtt_EXPORT int Rtt_Log( const char *format, ... ) __attribute__ ((format (printf, 1, 2)));

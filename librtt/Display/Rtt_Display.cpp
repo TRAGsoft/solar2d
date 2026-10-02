@@ -285,6 +285,8 @@ Display::Update()
 
 	up.Add( "Prepare for frame event" );
 
+    LuaContext::DispatchEngineLogs( L );
+
     const FrameEvent& fe = FrameEvent::Constant();
     fe.Dispatch( L, runtime );
     

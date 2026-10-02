@@ -782,6 +782,10 @@ Lua::Warning( lua_State *L, const char *fmt, ... )
 int
 Lua::DoCall( lua_State* L, int narg, int nresults )
 {
+#if !defined( Rtt_NO_GUI )
+	ScopedLogSink logSink( LuaContext::QueueEngineLog, LuaContext::HasRuntime( L ) ? LuaContext::GetContext( L ) : NULL );
+#endif
+
 	int base = lua_gettop(L) - narg;  /* errfunc index */
 
 	lua_CFunction callback = GetErrorHandler( LuaTraceback ); Rtt_ASSERT( callback );
