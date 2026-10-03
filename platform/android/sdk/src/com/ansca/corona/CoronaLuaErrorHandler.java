@@ -242,6 +242,8 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 		luaState.newTable();
 		for (int index = 0; index < elements.length; index++) {
 			com.naef.jnlua.LuaStackTraceElement element = elements[index];
+			// Use a stack key to avoid JNLua's shared integer-key parameter.
+			luaState.pushInteger(index + 1);
 			luaState.newTable();
 			if (element.getFunctionName() != null) {
 				luaState.pushString(element.getFunctionName());
@@ -258,7 +260,7 @@ public class CoronaLuaErrorHandler implements com.naef.jnlua.JavaFunction {
 				luaState.pushInteger(element.getLineNumber());
 				luaState.setField(-2, "currentline");
 			}
-			luaState.rawSet(-2, index + 1);
+			luaState.rawSet(-3);
 		}
 	}
 
