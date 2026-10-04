@@ -278,12 +278,15 @@ void CoronaLuaLogPrefixV( lua_State *L, const char *prefix, const char *fmt, va_
 	strcat( format, where );
 	strcat( format, fmt );
 
+#ifndef Rtt_NO_GUI
+	// Command-line builders do not link LuaContext.
 	if ( L && Rtt::LuaContext::HasRuntime( L ) )
 	{
 		Rtt::ScopedLogSink logSink( Rtt::LuaContext::QueueEngineLog, Rtt::LuaContext::GetContext( L ) );
 		Rtt_VLogException( format, arguments );
 	}
 	else
+#endif
 	{
 		Rtt_VLogException( format, arguments );
 	}
