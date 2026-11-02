@@ -217,6 +217,8 @@ static const size_t kSimulatorControlMaximumRequestSize = 1024 * 1024;
 static const size_t kSimulatorControlMaximumExecFileSize = 16 * 1024 * 1024;
 static const size_t kSimulatorControlMaximumStringSize = 4096;
 static const size_t kSimulatorControlMaximumResponseSize = 256 * 1024;
+// Full Lua results are transferred intact, or rejected explicitly.
+static const size_t kSimulatorControlMaximumJsonResultSize = 16 * 1024 * 1024;
 static const size_t kSimulatorControlMaximumDiagnosticMessageSize = 16 * 1024;
 static const size_t kSimulatorControlMaximumDiagnosticStackTraceSize = 128 * 1024;
 static const size_t kSimulatorControlMaximumDiagnosticContextSize = 96 * 1024;
@@ -783,6 +785,7 @@ WriteSimulatorControlFileAtomically( const std::string& path, const std::string&
 			temporaryPath, wideTemporaryPath ) ||
 		! ConvertSimulatorControlUtf8ToWide( path, widePath ) )
 	{
+		errno = EINVAL;
 		return false;
 	}
 	HANDLE fileHandle = CreateFileW(
@@ -790,44 +793,49 @@ WriteSimulatorControlFileAtomically( const std::string& path, const std::string&
 		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
 	if ( INVALID_HANDLE_VALUE == fileHandle )
 	{
+		SetSimulatorControlErrnoFromWindowsError( GetLastError() );
 		return false;
 	}
 	DWORD writtenLength = 0;
-	bool succeeded = contents.empty() ||
-		( WriteFile(
-			fileHandle, contents.data(), (DWORD)contents.length(),
-			& writtenLength, NULL ) &&
-			writtenLength == contents.length() );
+	BOOL didWrite = contents.empty() || WriteFile(
+		fileHandle, contents.data(), (DWORD)contents.length(), & writtenLength, NULL );
+	bool succeeded = didWrite && writtenLength == contents.length();
+	DWORD writeError = didWrite ? ERROR_WRITE_FAULT : GetLastError();
 	CloseHandle( fileHandle );
-	if ( ! succeeded ||
-		! MoveFileExW(
-			wideTemporaryPath.c_str(), widePath.c_str(),
-			MOVEFILE_REPLACE_EXISTING ) )
+	if ( ! succeeded )
 	{
 		DeleteFileW( wideTemporaryPath.c_str() );
+		SetSimulatorControlErrnoFromWindowsError( writeError );
+		return false;
+	}
+	if ( ! MoveFileExW( wideTemporaryPath.c_str(), widePath.c_str(), MOVEFILE_REPLACE_EXISTING ) )
+	{
+		DWORD moveError = GetLastError();
+		DeleteFileW( wideTemporaryPath.c_str() );
+		SetSimulatorControlErrnoFromWindowsError( moveError );
 		return false;
 	}
 	return true;
 #else
+	std::ofstream stream( temporaryPath.c_str(), std::ios::out | std::ios::binary | std::ios::trunc );
+	if ( ! stream )
 	{
-		std::ofstream stream( temporaryPath.c_str(), std::ios::out | std::ios::binary | std::ios::trunc );
-		if ( ! stream )
-		{
-			return false;
-		}
-		stream.write( contents.data(), (std::streamsize)contents.length() );
-			if ( ! stream )
-			{
-				stream.close();
-				DeleteSimulatorControlFile( temporaryPath );
-				return false;
-			}
-		}
-
-	if ( 0 != MoveSimulatorControlFile(
-		temporaryPath, path, true ) )
+		return false;
+	}
+	stream.write( contents.data(), (std::streamsize)contents.length() );
+	stream.close();
+	if ( ! stream )
 	{
+		int writeError = errno ? errno : EIO;
 		DeleteSimulatorControlFile( temporaryPath );
+		errno = writeError;
+		return false;
+	}
+	if ( 0 != MoveSimulatorControlFile( temporaryPath, path, true ) )
+	{
+		int moveError = errno;
+		DeleteSimulatorControlFile( temporaryPath );
+		errno = moveError;
 		return false;
 	}
 	return true;
@@ -1299,7 +1307,7 @@ MoveSimulatorControlFileAside( const std::string& path )
 static bool
 AcquireSimulatorControlLock(
 	const std::string& directory, unsigned long timeoutMilliseconds,
-	std::string& lockPath, std::string& error )
+	std::string& lockPath, std::string& error, const char **errorCode = NULL )
 {
 	lockPath = SimulatorControlPath( directory, ".simulator-control.lock" );
 	unsigned long long deadline =
@@ -1312,7 +1320,12 @@ AcquireSimulatorControlLock(
 		}
 		if ( EEXIST != errno )
 		{
-			error = "unable to create the Simulator control lock";
+			int fileError = errno;
+			error = "unable to create the Simulator control lock at " + lockPath + ": " + strerror( fileError );
+			if ( errorCode )
+			{
+				*errorCode = ( EACCES == fileError || EPERM == fileError ) ? "permission-denied" : "control-io-error";
+			}
 			return false;
 		}
 
@@ -1339,6 +1352,10 @@ AcquireSimulatorControlLock(
 		SleepSimulatorControlMilliseconds( 20 );
 	}
 	error = "another Simulator control request held the lock for too long";
+	if ( errorCode )
+	{
+		*errorCode = "control-busy";
+	}
 	return false;
 }
 
@@ -1448,18 +1465,21 @@ AppendSimulatorControlJsonString( std::string& result, const std::string& value 
 }
 
 static std::string
-SimulatorControlErrorResponse( const std::string& message )
+SimulatorControlErrorResponse( const std::string& message, const char *code = "invalid-request" )
 {
 	std::string result( "{\"ok\":false,\"error\":{\"message\":" );
 	AppendSimulatorControlJsonString( result, message );
+	result.append( ",\"code\":" );
+	AppendSimulatorControlJsonString( result, code );
 	result.append( "}}" );
 	return result;
 }
 
 static std::string
-SimulatorControlSuccessResponse( const std::string& jsonResult )
+SimulatorControlSuccessResponse( const std::string& jsonResult, bool fullJson = false )
 {
-	return std::string( "{\"ok\":true,\"result\":" ) + jsonResult + "}";
+	return std::string( "{\"ok\":true,\"result\":" ) + jsonResult +
+		( fullJson ? ",\"encoding\":\"json\"}" : "}" );
 }
 
 static std::string
@@ -3535,8 +3555,13 @@ static bool
 ExecuteSimulatorControlChunk(
 	lua_State *L, const std::string& payload, const char *chunkName,
 	bool isExpression, bool isFile, std::string& jsonResult, std::string& error,
-	bool *firstResultTruthy = NULL )
+	bool *firstResultTruthy = NULL, bool fullJson = false,
+	const char **errorCode = NULL )
 {
+	if ( errorCode )
+	{
+		*errorCode = "lua-error";
+	}
 	int originalTop = lua_gettop( L );
 	int status = 0;
 	if ( isFile )
@@ -3598,7 +3623,45 @@ ExecuteSimulatorControlChunk(
 		{
 			jsonResult.push_back( ',' );
 		}
-		AppendSimulatorControlValueSummary( L, originalTop + index + 1, jsonResult );
+		if ( fullJson )
+		{
+			// Keep encoder errors inside Lua's protected call. In particular,
+			// macOS Lua exceptions must not unwind through a C++ callback.
+			luaL_loadstring( L,
+				"local value = ...; return require('json').encode(value, {"
+				"exception = function(reason, value, state, message) error(message) end})" );
+			lua_pushvalue( L, originalTop + index + 1 );
+			if ( 0 != lua_pcall( L, 1, 1, 0 ) )
+			{
+				error = "Lua ran, but its result could not be encoded: ";
+				const char *message = lua_tostring( L, -1 );
+				error.append( message ? message : "JSON encoder raised a non-string error" );
+				if ( errorCode )
+				{
+					*errorCode = "serialization-error";
+				}
+				lua_settop( L, originalTop );
+				return false;
+			}
+			size_t length = 0;
+			const char *encoded = lua_tolstring( L, -1, & length );
+			if ( jsonResult.length() + length + 1 > kSimulatorControlMaximumJsonResultSize )
+			{
+				error = "Lua ran, but its JSON result exceeded sixteen megabytes";
+				if ( errorCode )
+				{
+					*errorCode = "result-too-large";
+				}
+				lua_settop( L, originalTop );
+				return false;
+			}
+			jsonResult.append( encoded, length );
+			lua_pop( L, 1 );
+		}
+		else
+		{
+			AppendSimulatorControlValueSummary( L, originalTop + index + 1, jsonResult );
+		}
 	}
 	jsonResult.push_back( ']' );
 	lua_settop( L, originalTop );
@@ -5143,11 +5206,11 @@ class SimulatorControlClientLock
 
 		bool Acquire(
 			const std::string& directory, unsigned long timeoutMilliseconds,
-			std::string& error )
+			std::string& error, const char **errorCode = NULL )
 		{
 			std::string path;
 			if ( ! AcquireSimulatorControlLock(
-				directory, timeoutMilliseconds, path, error ) )
+				directory, timeoutMilliseconds, path, error, errorCode ) )
 			{
 				return false;
 			}
@@ -5163,12 +5226,16 @@ static bool
 PerformSimulatorControlClientRequest(
 	const std::string& directory, const std::string& command,
 	const std::string& payload, unsigned long timeoutMilliseconds,
-	std::string& response, std::string& error )
+	std::string& response, std::string& error, const char **errorCode = NULL )
 {
 	SimulatorControlSession session;
 	if ( ! WaitForSimulatorControlSession(
 		directory, timeoutMilliseconds, false, std::string(), session, error ) )
 	{
+		if ( errorCode )
+		{
+			*errorCode = "session-unavailable";
+		}
 		return false;
 	}
 
@@ -5180,7 +5247,7 @@ PerformSimulatorControlClientRequest(
 	}
 
 	SimulatorControlClientLock lock;
-	if ( ! lock.Acquire( directory, timeoutMilliseconds, error ) )
+	if ( ! lock.Acquire( directory, timeoutMilliseconds, error, errorCode ) )
 	{
 		return false;
 	}
@@ -5192,6 +5259,10 @@ PerformSimulatorControlClientRequest(
 		! IsSimulatorControlProcessAlive( lockedSession.processId ) )
 	{
 		error = "the Simulator control session changed before the request was sent";
+		if ( errorCode )
+		{
+			*errorCode = "session-changed";
+		}
 		return false;
 	}
 
@@ -5199,6 +5270,10 @@ PerformSimulatorControlClientRequest(
 	if ( SimulatorControlFileExists( requestPath ) )
 	{
 		error = "the Simulator has not consumed an existing control request";
+		if ( errorCode )
+		{
+			*errorCode = "control-busy";
+		}
 		return false;
 	}
 
@@ -5219,9 +5294,23 @@ PerformSimulatorControlClientRequest(
 	request.append( command );
 	request.push_back( '\n' );
 	request.append( payload );
+	if ( request.length() > kSimulatorControlMaximumRequestSize )
+	{
+		error = "control request exceeds one megabyte; use execute-lua-file for larger scripts";
+		if ( errorCode )
+		{
+			*errorCode = "request-too-large";
+		}
+		return false;
+	}
 	if ( ! WriteSimulatorControlFileAtomically( requestPath, request ) )
 	{
-		error = "unable to write the Simulator control request";
+		int fileError = errno;
+		error = "unable to write the Simulator control request at " + requestPath + ": " + strerror( fileError );
+		if ( errorCode )
+		{
+			*errorCode = ( EACCES == fileError || EPERM == fileError ) ? "permission-denied" : "control-io-error";
+		}
 		return false;
 	}
 
@@ -5229,7 +5318,7 @@ PerformSimulatorControlClientRequest(
 		GetSimulatorControlMilliseconds() + timeoutMilliseconds;
 	while ( GetSimulatorControlMilliseconds() < deadline )
 	{
-		if ( ReadSimulatorControlFile( responsePath, response ) )
+		if ( ReadSimulatorControlFile( responsePath, response, kSimulatorControlMaximumJsonResultSize + 1024 ) )
 		{
 			DeleteSimulatorControlFile( responsePath );
 			if ( "relaunch-project" == command &&
@@ -5249,7 +5338,11 @@ PerformSimulatorControlClientRequest(
 	}
 
 	DeleteSimulatorControlFile( requestPath );
-	error = "the Simulator did not answer the control request before the timeout";
+	error = "the Simulator did not answer the control request before the timeout; execution may already have occurred";
+	if ( errorCode )
+	{
+		*errorCode = "control-timeout";
+	}
 	return false;
 }
 
@@ -6018,9 +6111,9 @@ PrintSimulatorControlClientHelp()
 		"  controller disconnect [--id ID]\n"
 		"  controller send-button-event NAME [down|up|pressed] [--id ID]\n"
 		"  controller set-axis NAME VALUE [--id ID]\n"
-		"  evaluate-lua [LUA EXPRESSION]\n"
-		"  execute-lua [LUA STATEMENTS]\n"
-		"  execute-lua-file PATH\n"
+		"  evaluate-lua [--json] [LUA EXPRESSION]\n"
+		"  execute-lua [--json] [LUA STATEMENTS]\n"
+		"  execute-lua-file [--json] PATH\n"
 		"  inspect-lua-value PATH [--cursor OFFSET]\n"
 		"  relaunch-project\n"
 		"  quit-simulator [EXIT CODE]\n"
@@ -6106,13 +6199,21 @@ RunSimulatorControlClientInternal(
 	if ( ! MakeSimulatorControlAbsolutePath( directoryArgument, directory ) ||
 		! SimulatorControlDirectoryExists( directory ) )
 	{
-		fprintf(
-			stderr, "Simulator control: directory does not exist: %s\n",
-			directoryArgument );
+		std::string response = SimulatorControlErrorResponse(
+			std::string( "control directory does not exist: " ) + directoryArgument,
+			"session-unavailable" );
+		printf( "%s\n", response.c_str() );
 		return true;
 	}
 
 	std::string command( argv[argumentIndex++] );
+	bool fullJson = ( "evaluate-lua" == command || "execute-lua" == command ||
+		"execute-lua-file" == command ) && argumentIndex < argc &&
+		0 == strcmp( argv[argumentIndex], "--json" );
+	if ( fullJson )
+	{
+		argumentIndex++;
+	}
 	std::string payload;
 	bool followRuntimeLogs = false;
 	unsigned long runtimeLogsSinceSequence = 0;
@@ -6842,8 +6943,13 @@ RunSimulatorControlClientInternal(
 		return true;
 	}
 
+	if ( fullJson )
+	{
+		command.append( "-json" );
+	}
 	std::string response;
 	std::string error;
+	const char *errorCode = "control-error";
 	bool performed = false;
 	if ( "wait-for-condition" == command )
 	{
@@ -6894,11 +7000,13 @@ RunSimulatorControlClientInternal(
 	{
 		performed = PerformSimulatorControlClientRequest(
 			directory, command, payload, timeoutMilliseconds,
-			response, error );
+			response, error, & errorCode );
 	}
 	if ( ! performed )
 	{
 		fprintf( stderr, "Simulator control: %s\n", error.c_str() );
+		response = SimulatorControlErrorResponse( error, errorCode );
+		printf( "%s\n", response.c_str() );
 		return true;
 	}
 	if ( ( "assert-condition" == command ||
@@ -6960,7 +7068,7 @@ ProcessSimulatorControlRequest(
 		! IsSimulatorControlCommandAllowedWhileDebuggerPaused( command ) )
 	{
 		return SimulatorControlErrorResponse(
-			"this command is unavailable while Lua execution is debug-paused" );
+			"this command is unavailable while Lua execution is debug-paused", "debugger-paused" );
 	}
 
 	if ( "debugger-status" == command )
@@ -7916,7 +8024,8 @@ ProcessSimulatorControlRequest(
 	}
 
 	if ( "evaluate-lua" == command || "execute-lua" == command ||
-		"execute-lua-file" == command )
+		"execute-lua-file" == command || "evaluate-lua-json" == command ||
+		"execute-lua-json" == command || "execute-lua-file-json" == command )
 	{
 		if ( payload.empty() )
 		{
@@ -7925,19 +8034,21 @@ ProcessSimulatorControlRequest(
 
 		std::string jsonResult;
 		std::string error;
-		const bool isExpression = "evaluate-lua" == command;
-		const bool isFile = "execute-lua-file" == command;
+		const bool fullJson = command.size() >= 5 && command.substr( command.size() - 5 ) == "-json";
+		const bool isExpression = "evaluate-lua" == command || "evaluate-lua-json" == command;
+		const bool isFile = "execute-lua-file" == command || "execute-lua-file-json" == command;
+		const char *errorCode = "lua-error";
 		const char *chunkName =
 			isExpression ? "=@simulator-control/eval" : "=@simulator-control/exec";
 		if ( ! ExecuteSimulatorControlChunk(
-			L, payload, chunkName, isExpression, isFile, jsonResult, error ) )
+			L, payload, chunkName, isExpression, isFile, jsonResult, error, NULL, fullJson, & errorCode ) )
 		{
 			RecordSimulatorControlExecutionDiagnostic(
 				runtime, state, error );
 			WriteSimulatorControlDiagnostics( state );
-			return SimulatorControlErrorResponse( error );
+			return SimulatorControlErrorResponse( error, errorCode );
 		}
-		return SimulatorControlSuccessResponse( jsonResult );
+		return SimulatorControlSuccessResponse( jsonResult, fullJson );
 	}
 
 	if ( "inspect-lua-value" == command )

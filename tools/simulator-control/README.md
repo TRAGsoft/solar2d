@@ -464,3 +464,36 @@ the session and invalidates table and display-object handles. A suspended or
 otherwise blocked Lua runtime cannot answer until it resumes; control-paused,
 debug-paused, and error-halted runtimes keep the mailbox responsive, subject to
 their command restrictions above.
+
+## Complete Lua results for tools
+
+The three Lua execution commands accept `--json` immediately after the command:
+
+```sh
+"$SIMULATOR" -simulator-control-dir "$CONTROL_DIR" -simulator-control execute-lua --json 'return {text="Hello", entries={1,2,3}}'
+"$SIMULATOR" -simulator-control-dir "$CONTROL_DIR" -simulator-control evaluate-lua --json 'display.contentWidth'
+"$SIMULATOR" -simulator-control-dir "$CONTROL_DIR" -simulator-control execute-lua-file --json /tmp/report.lua
+```
+
+The first command returns `{"ok":true,"result":[{"text":"Hello","entries":[1,2,3]}],"encoding":"json"}`.
+The `encoding` marker lets tools reject older builds that ignore the flag.
+`result` contains every return value, in order; nil becomes null and no returns
+produce `[]`. Without `--json`, commands retain their inspection summaries and
+table handles. Code can also arrive on stdin, avoiding shell quoting.
+
+Encoding uses Solar2D's `json.encode` with an exception handler that rejects cycles
+and unsupported values instead of substituting error strings. Normal JSON rules
+apply, including `__jsontype` for empty objects and null for nonfinite numbers.
+Return data tables rather than live display objects. Strings and nested tables
+are complete: results above 16 MiB fail with `result-too-large`, never truncation.
+Requests are limited to 1 MiB; `execute-lua-file` accepts scripts up to 16 MiB.
+
+Runtime failures return `{"ok":false,"error":{"code":"...","message":"..."}}`
+and exit 1. `lua-error` includes the execution traceback; `serialization-error`
+and `result-too-large` mean the code ran but its result could not be returned.
+Direct requests also return JSON for transport failures (exit 2):
+`session-unavailable`, `session-changed`, `permission-denied`, `control-io-error`,
+`control-busy`, `control-timeout`, and `request-too-large`. File errors identify
+the affected path and OS error. Other compound-command transport failures use
+`control-error`; CLI argument errors may still be plain stderr. Do not restart
+or retry automatically: a timeout can happen after code has executed.
