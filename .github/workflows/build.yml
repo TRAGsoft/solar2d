@@ -21,11 +21,12 @@ jobs:
   source-code:
     name: Check out and process source code
     if: "!contains(github.ref, 'refs/tags/') || github.repository == 'TRAGsoft/solar2d'"
-    runs-on: macos-26
+    runs-on: macos-26-intel
     steps:
       - run: CDR="$(basename "$(pwd)")" ; cd .. ; rm -rf "$CDR" ; mkdir -p "$CDR" ; cd "$CDR"
       - uses: actions/checkout@v4
         with:
+          ref: 724abd78670e9b2582fe4d951308fa5dfa8f1842
           submodules: recursive
       - run: ./tools/GHAction/daily_env.sh
       - name: Set daily build
@@ -40,7 +41,7 @@ jobs:
     needs:
       - source-code
       - collect-ios-templates
-    runs-on: macos-26
+    runs-on: macos-26-intel
     steps:
       - run: CDR="$(basename "$(pwd)")" ; cd .. ; rm -rf "$CDR" ; mkdir -p "$CDR" ; cd "$CDR"
       - name: Get processed code
@@ -72,7 +73,7 @@ jobs:
     strategy:
       matrix:
         runner:
-          - macos-26
+          - macos-26-intel
         xcode:
           - Xcode_26.4
         target:
@@ -136,7 +137,7 @@ jobs:
       - source-code
       - build-tools
     if: (! failure() && ! cancelled())
-    runs-on: macos-26
+    runs-on: macos-26-intel
     steps:
       - run: CDR="$(basename "$(pwd)")" ; cd .. ; rm -rf "$CDR" ; mkdir -p "$CDR" ; cd "$CDR"
       - name: Get processed code
@@ -196,7 +197,7 @@ jobs:
           exit 1
 
   check-notarization:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     steps:
       - name: Check notarization credentials
         run: |
