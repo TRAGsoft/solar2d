@@ -693,7 +693,7 @@ function nxsPackageApp( args )
     -- the "old" strategy of stripping only the leading quote and the last
     -- inner quote -- which breaks apart the AuthoringTool arg list.
     cmd = '""' .. nxsRoot .. '\\Tools\\CommandLineTools\\AuthoringTool\\AuthoringTool.exe"'
-    cmd = cmd .. ' -v --utf8'
+    cmd = cmd .. ' -v --utf8 --platform NX'
     cmd = cmd .. ' creatensp'
     cmd = cmd .. ' -o "' .. nspfile .. '"'
     cmd = cmd .. ' --desc "' .. descfile .. '"'
@@ -713,6 +713,7 @@ function nxsPackageApp( args )
     log('Build mode: ' .. (publishable and 'publishable' or 'dev (non-publishable)'))
 
     if publishable then
+        cmd = cmd .. ' --error-unpublishable'
         cmd = cmd .. ' --nss "' .. nssFile .. '"'
         log('Added --nss: ' .. nssFile)
 
@@ -745,10 +746,12 @@ function nxsPackageApp( args )
     local execSuccess = (osResult == 0) or (osResult == true)
     local authRc = execSuccess and 0 or 1
 
-    -- Validate the produced NSP. AuthoringTool can return non-zero yet leave a
-    -- valid NSP behind, and conversely can return 0 but delete the NSP when it
-    -- flags an unpublishable-error (SDK version mismatch, missing signatures,
-    -- etc.). Trust the file when it exists with PFS0 magic; fail hard otherwise.
+    -- A submission error is fatal even when AuthoringTool leaves an NSP on disk.
+    if publishable and not execSuccess then
+        return 'AuthoringTool creatensp failed for the Switch submission (rc=' .. tostring(osResult) .. ')'
+    end
+
+    -- Also check the output: AuthoringTool can exit successfully without leaving a valid NSP.
     local nspSize = (isFile(nspfile) and (lfs.attributes(nspfile, 'size') or 0)) or 0
     local nspLooksValid = false
     if nspSize > 0 then
