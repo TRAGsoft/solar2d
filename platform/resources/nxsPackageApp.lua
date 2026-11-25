@@ -372,7 +372,7 @@ local function findNssFile(codeFolder)
         return nil
     end
     for file in lfs.dir(codeFolder) do
-        if file:match("%.nss$") then
+        if file:lower():match("%.nss$") then
             return pathJoin(codeFolder, file)
         end
     end
@@ -525,8 +525,22 @@ function nxsPackageApp( args )
     -- Fail fast on an unpublishable template BEFORE the expensive project copy
     -- and .car compile: publishable builds need an .nss in the template's code
     -- folder, and its absence cannot be fixed later in the build.
-    if args.publishable and not findNssFile(codeFolder) then
-        return 'Publishable build requires an .nss file in the template code folder, but template ' .. template .. ' does not ship one. Rebuild the Switch template via build_release_template.bat.'
+    local nssFile = findNssFile(codeFolder)
+    if args.publishable then
+        if not nssFile then
+            return 'Publishable build requires an .nss file in the template code folder, but template ' .. template .. ' does not ship one. Rebuild the Switch template via build_release_template.bat.'
+        end
+        -- AuthoringTool needs the NSS via --nss, but everything in codeFolder
+        -- is also passed to --program. Keep the verification input outside it.
+        local verificationNss = pathJoin(tmpDir, 'main.nss')
+        local moved, reason = os.rename(nssFile, verificationNss)
+        if not moved then
+            return 'Failed to stage the NSS outside the program code folder: ' .. tostring(reason)
+        end
+        if findNssFile(codeFolder) then
+            return 'More than one NSS file in the Switch template code folder: ' .. codeFolder
+        end
+        nssFile = verificationNss
     end
     -- gather files into appFolder (tmp folder); exclude the whole build output
     -- root so a dstDir inside the project can never be re-copied into the app.
@@ -658,8 +672,6 @@ function nxsPackageApp( args )
         return 'MakeMeta failed (rc=' .. tostring(metaRc) .. ')'
     end
 
-    -- Find .nss file in code folder (informational; used only when publishable).
-    local nssFile = findNssFile(codeFolder)
     if nssFile then
         log('Found NSS file: ' .. nssFile)
         local nssInfo = checkNssFile(nssFile)
@@ -701,10 +713,6 @@ function nxsPackageApp( args )
     log('Build mode: ' .. (publishable and 'publishable' or 'dev (non-publishable)'))
 
     if publishable then
-        if not nssFile then
-            log('ERROR: publishable build requires --nss but no NSS file was found in code folder')
-            return 'Publishable build requires NSS file in code folder, but none was found'
-        end
         cmd = cmd .. ' --nss "' .. nssFile .. '"'
         log('Added --nss: ' .. nssFile)
 
